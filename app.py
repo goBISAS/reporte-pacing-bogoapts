@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import re
-import urllib.parse
 
 # 1. Configuración de la página de Streamlit
 st.set_page_config(
@@ -43,15 +42,11 @@ st.markdown("""
 
 # 2. Funciones de Carga y Procesamiento de Datos (Cacheado a 10 min)
 @st.cache_data(ttl=600)
-def load_and_process_data(sheet_url, sheet_name="mayo 26"):
+def load_and_process_data(sheet_url, gid_id="388077940"):
     try:
-        # Sanitizar y codificar el nombre de la hoja para la URL
-        encoded_sheet_name = urllib.parse.quote(sheet_name)
-        
-        # Construir la URL de exportación apuntando explícitamente a la pestaña requerida
-        # Eliminamos parámetros gid antiguos para evitar conflictos y forzamos la hoja por nombre
+        # ARQUITECTURA BLINDADA: Extracción directa por GID único (Inmutable ante cambios de nombre de pestaña)
         base_url = sheet_url.split('/edit')[0]
-        csv_url = f"{base_url}/export?format=csv&sheet={encoded_sheet_name}"
+        csv_url = f"{base_url}/export?format=csv&gid={gid_id}"
         
         # Carga del encabezado para extraer el Presupuesto Mensual (filas 1-5)
         df_header = pd.read_csv(csv_url, nrows=5, header=None)
@@ -82,7 +77,7 @@ def load_and_process_data(sheet_url, sheet_name="mayo 26"):
         res_matches = [c for c in df.columns if any(k in c.lower() for k in ['result', 'convers', 'compras'])]
         cpa_matches = [c for c in df.columns if any(k in c.lower() for k in ['cpa', 'costo por'])]
 
-        # Asignación segura por posición si los nombres no coinciden exactamente
+        # Fallback de posición física por seguridad
         campaign_col = camp_matches[0] if camp_matches else df.columns[1] if len(df.columns) > 1 else df.columns[0]
         platform_col = plat_matches[0] if plat_matches else df.columns[0]
         spend_col = spend_matches[0] if spend_matches else df.columns[3] if len(df.columns) > 3 else df.columns[-1]
@@ -96,11 +91,11 @@ def load_and_process_data(sheet_url, sheet_name="mayo 26"):
         df = df[~df[platform_col].astype(str).str.upper().str.contains('TOTAL', na=False)]
         df = df.dropna(subset=[campaign_col, platform_col])
 
-        # Limpieza de monedas / strings a float
+        # Limpieza robusta de formatos de moneda (COP / USD / Comas / Puntos)
         def clean_currency(val):
             if pd.isna(val):
                 return 0.0
-            val_str = str(val).replace('$', '').replace('COP', '')
+            val_str = str(val).upper().replace('$', '').replace('COP', '').replace('USD', '')
             val_str = re.sub(r'[\s,.]', '', val_str)
             try:
                 return float(val_str)
@@ -112,7 +107,7 @@ def load_and_process_data(sheet_url, sheet_name="mayo 26"):
 
         df[spend_col] = df[spend_col].apply(clean_currency)
         
-        # Construcción del DataFrame Estructurado Final
+        # Construcción del DataFrame Unificado final
         mapped_df = pd.DataFrame()
         mapped_df['Medio'] = df[platform_col]
         mapped_df['Campaña'] = df[campaign_col]
@@ -131,30 +126,30 @@ def load_and_process_data(sheet_url, sheet_name="mayo 26"):
         
         mapped_df['Objetivo'] = mapped_df['Objetivo'].fillna('Official Conversions')
         
-        # Failsafe: Filtrar filas donde el Spend sea menor o igual a cero para evitar errores en Plotly
+        # Filtrar filas de inversión en 0 para evitar fallos en gráficos
         mapped_df = mapped_df[mapped_df['Spend'] > 0]
         
         return mapped_df, presupuesto_mensual
         
     except Exception as e:
-        st.error(f"Error crítico en lectura de la hoja '{sheet_name}': {e}")
+        st.error(f"Error crítico en lectura de la arquitectura de datos por GID: {e}")
         return pd.DataFrame(), 0.0
 
 # 3. Sidebar e Identidad Visual (Branding)
 st.sidebar.image("Logo_bogoapts_dashboard.PNG", use_container_width=True)
 st.sidebar.title("Bogoapts Dashboard")
 st.sidebar.markdown("""
-**Control de Rendimiento de Paid Media** *Versión 1.2 Estable* ___
+**Control de Rendimiento de Paid Media** *Versión 1.3 Inmutable* ___
 **Cliente:** Bogoapts  
-**Hoja activa:** mayo 26  
+**Conexión:** GID Target Activo  
 **Entorno:** Streamlit Cloud  
 """)
 
-# URL de origen de datos asignada
+# URL base provista
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHlX9sx0kOvNg-150YRE42W0/edit?gid=388077940#gid=388077940"
 
-# Ejecución de Pipeline de Datos especificando explícitamente la pestaña objetivo
-df_clean, presupuesto = load_and_process_data(SHEET_URL, sheet_name="mayo 26")
+# Ejecución del pipeline usando el GID inmutable extraído de tus requerimientos
+df_clean, presupuesto = load_and_process_data(SHEET_URL, gid_id="388077940")
 
 if not df_clean.empty:
     # 4. Cálculo Automático en Python del Gasto acumulado (Requerimiento Estricto)
@@ -162,7 +157,7 @@ if not df_clean.empty:
     dia_actual = datetime.now().day
     
     if presupuesto == 0:
-        presupuesto = 15000000.0  # Fallback seguro corporativo
+        presupuesto = 15000000.0  # Fallback seguro de visualización
 
     # 5. Métricas Superiores (st.metric)
     st.title("📊 Rendimiento de Paid Media — Bogoapts")
@@ -180,7 +175,6 @@ if not df_clean.empty:
     # 6. Gráfica Principal: Plotly Treemap (UX Móvil Optimizado)
     st.subheader("🎯 Distribución de Inversión Acumulada")
     
-    # Inyección dinámica del monto total gastado por plataforma en el string de Nivel 1
     plataforma_totals = df_clean.groupby('Medio')['Spend'].sum().to_dict()
     df_clean['Medio_Label'] = df_clean['Medio'].apply(lambda x: f"{x} (${plataforma_totals[x]:,.0f} COP)")
 
@@ -192,7 +186,7 @@ if not df_clean.empty:
         color_continuous_scale=['#444444', '#808080', '#FFFFFF']
     )
 
-    # Requerimiento UX Móvil: Uso estricto de texttemplate para impresión nativa sin necesidad de hover
+    # Requerimiento UX Móvil: Sin hover funcional
     fig.update_traces(
         texttemplate="<b>%{label}</b><br>$%{value:,.0f} COP<br>%{percentParent:.1%}",
         textposition="inside",
@@ -214,7 +208,6 @@ if not df_clean.empty:
     with st.expander("🔍 Ver Tabla de Detalles Completa"):
         df_display = df_clean[['Medio', 'Campaña', 'Objetivo', 'Spend', 'Resultados', 'CPA']].copy()
         
-        # Formateo estricto para presentación ejecutiva del cliente
         df_display['Spend'] = df_display['Spend'].apply(lambda x: f"$ {x:,.0f} COP")
         df_display['CPA'] = df_display['CPA'].apply(lambda x: f"$ {x:,.0f} COP" if x > 0 else "N/A")
         df_display['Resultados'] = df_display['Resultados'].apply(lambda x: f"{x:,.0f}" if x > 0 else "0")
@@ -222,4 +215,4 @@ if not df_clean.empty:
         st.dataframe(df_display, use_container_width=True, hide_index=True)
 
 else:
-    st.warning("⚠️ No se encontraron registros con inversión válida (> 0) en la pestaña 'mayo 26'. Revisa que las celdas de gasto no estén vacías o en cero en esa hoja específica.")
+    st.warning("⚠️ Error de procesamiento de datos. Verifica que la hoja correspondiente al GID 388077940 tenga filas de campañas válidas con montos mayores a 0 listadas a partir de la fila 6.")
