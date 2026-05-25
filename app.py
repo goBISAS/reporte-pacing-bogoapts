@@ -57,13 +57,11 @@ with st.sidebar:
     st.markdown("---")
     mes_seleccionado = st.selectbox("📅 Seleccione el Mes de Reporte:", options=meses_disponibles)
 
-# --- CONEXIÓN DINÁMICA ---
-# La URL base utiliza rigurosamente el ID público extraído del navegador: 1Qkw-Fi3tLvY68maHxJOmHIX9sx0kOvNg-150YRE42W0
-url_base = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHIX9sx0kOvNg-150YRE42W0/"
+# --- CONEXIÓN DINÁMICA CON LA URL TEXTUAL VERIFICADA ---
+url_base = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHlX9sx0kOvNg-150YRE42W0/"
 url_pacing = get_csv_url_by_sheet(url_base, mes_seleccionado)
 
 try:
-    # Intento de lectura remota del CSV de Google
     df_raw = pd.read_csv(url_pacing, header=None, dtype=str).fillna('')
     
     # 1. RADAR: Buscar la fila de encabezados
@@ -75,10 +73,10 @@ try:
             break
     
     if idx_header is None:
-        st.error(f"⚠️ Estructura de campaña no localizada en la pestaña '{mes_seleccionado}'. Asegúrate de que el nombre coincide exactamente.")
+        st.error(f"⚠️ Estructura de campaña no localizada en la pestaña '{mes_seleccionado}'.")
         st.stop()
 
-    # 2. LECTURA DEL PRESUPUESTO APROBADO (Fila superior)
+    # 2. LECTURA DEL PRESUPUESTO APROBADO
     presupuesto_mensual = "$0"
     for i in range(idx_header):
         fila = df_raw.iloc[i].astype(str).tolist()
@@ -91,7 +89,7 @@ try:
         if presupuesto_mensual != "$0":
             break
 
-    # 3. CONSTRUCCIÓN DE MATRIZ DE DATOS (Estructura fija Cantabria/Hyatt v5.0)
+    # 3. CONSTRUCCIÓN DE MATRIZ DE DATOS (Estructura fija posicional)
     df_datos = df_raw.iloc[idx_header + 1:].copy()
     
     col_idx_medio = 0  # Columna A: Canal
@@ -105,76 +103,4 @@ try:
     # 4. EXTRACCIÓN INVERSA DE FECHA DE ACTUALIZACIÓN
     fecha_update = "N/D"
     if len(df_datos) > 0 and len(df_raw.columns) > col_idx_fecha:
-        for row_pos in range(len(df_raw) - 1, idx_header, -1):
-            val_celda = str(df_raw.iloc[row_pos, col_idx_fecha]).strip()
-            val_lower = val_celda.lower()
-            
-            if val_celda != '' and val_lower not in ['nan', 'none', '<na>', '-', 'null', 'total']:
-                if not any(k in val_lower for k in ['actualiz', 'pacing', 'fecha', 'campaign']):
-                    fecha_update = val_celda
-                    break
-
-    # 5. CREACIÓN Y DEPURACIÓN DEL DATA CLEAN
-    df_limpio = pd.DataFrame()
-    df_limpio['Campaña'] = df_datos.iloc[:, col_idx_camp].astype(str).str.strip()
-    df_limpio['Medio'] = df_datos.iloc[:, col_idx_medio].astype(str).str.strip()
-    df_limpio['Gasto_Raw'] = df_datos.iloc[:, col_idx_spend].astype(str).str.strip()
-    
-    if len(df_datos.columns) > col_idx_tipo:
-        df_limpio['Objetivo'] = df_datos.iloc[:, col_idx_tipo].astype(str).str.strip().replace('', 'Sin Objetivo')
-    else:
-        df_limpio['Objetivo'] = 'General'
-        
-    df_limpio['Resultados'] = df_datos.iloc[:, col_idx_res].astype(str).str.strip() if len(df_datos.columns) > col_idx_res else 'N/D'
-    df_limpio['CPA'] = df_datos.iloc[:, col_idx_cpa].astype(str).str.strip() if len(df_datos.columns) > col_idx_cpa else 'N/D'
-
-    # Limpieza estricta de filas vacías o de sumatorias parciales
-    df_limpio = df_limpio[df_limpio['Campaña'] != '']
-    df_limpio = df_limpio[~df_limpio['Campaña'].str.upper().str.contains('TOTAL')]
-    df_limpio = df_limpio[~df_limpio['Campaña'].str.lower().str.contains('campaign|campaña')]
-
-    df_limpio['Medio'] = df_limpio['Medio'].replace(['', 'nan', 'NaN'], pd.NA).ffill().fillna('Sin Medio')
-    df_limpio['Gasto'] = df_limpio['Gasto_Raw'].str.replace(r'[^\d.-]', '', regex=True)
-    df_limpio['Gasto'] = pd.to_numeric(df_limpio['Gasto'], errors='coerce').fillna(0)
-
-    # 6. MÁSTER CÁLCULOS
-    resumen_medios = df_limpio.groupby('Medio')['Gasto'].sum()
-    mapa_medios = {med: f"{med} (${tot:,.0f})" for med, tot in resumen_medios.items()}
-    df_limpio['Medio_Labels'] = df_limpio['Medio'].map(mapa_medios).astype(str)
-    gasto_total_calculado = df_limpio['Gasto'].sum()
-
-    # --- INTERFAZ VISUAL ---
-    st.title(f"🏢 Dashboard Gerencial BogoApts: {mes_seleccionado.title()}")
-    
-    c1, c2, c3 = st.columns(3)
-    with c1: st.metric("Presupuesto Mensual", f"{presupuesto_mensual}")
-    with c2: st.metric("Inversión Ejecutada", f"${gasto_total_calculado:,.0f}")
-    with c3:
-        if mes_seleccionado == meses_disponibles[0]:
-            st.metric("Día de Medición", f"Día {datetime.now().day}")
-        else:
-            st.metric("Estado del Mes", "Cerrado")
-
-    st.success(f"✅ Sincronización exitosa con la pestaña [{mes_seleccionado}] | Último registro: {fecha_update}")
-    st.divider()
-
-    # --- VISUALIZACIÓN TREEMAP ---
-    st.header("📊 Distribución por Canal y Objetivo")
-    df_plot = df_limpio[df_limpio['Gasto'] > 0]
-    if not df_plot.empty:
-        fig = px.treemap(df_plot, path=['Medio_Labels', 'Objetivo'], values='Gasto', color='Gasto', color_continuous_scale=['#d6b58e', '#5b3f8e'])
-        fig.update_traces(texttemplate="<b>%{label}</b><br>$%{value:,.0f}", hovertemplate="<b>%{label}</b><br>Inversión: $%{value:,.0f}<extra></extra>", textposition="middle center")
-        fig.update_layout(margin=dict(t=10, l=10, r=10, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("No se detectan datos de gasto mayores a $0 para graficar en este periodo.")
-
-    # --- EXPANDER CON TABLA DE CONTROL ---
-    with st.expander("📝 Detalle General de Campañas"):
-        st.dataframe(df_limpio[['Medio', 'Campaña', 'Objetivo', 'Resultados', 'CPA']].sort_values(by='Medio'), use_container_width=True, hide_index=True)
-
-except Exception as e:
-    st.error(f"Error detectado en el procesamiento: {e}")
-    st.info(f"💡 Tip Técnico: Verifica que la hoja de cálculo de Google tenga el acceso configurado en 'Cualquier persona con el enlace'.")
-
-st.caption(f"BogoApts Real Estate Analytics | Strategic Analytics by goBIG")
+        for row_pos in range(len(df_raw) - 1, idx_header,
