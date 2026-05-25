@@ -51,7 +51,12 @@ def get_csv_url_by_sheet(url, sheet_name):
 # --- SIDEBAR CONTROL ---
 meses_disponibles = obtener_meses_disponibles()
 with st.sidebar:
-    st.image("https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=150", use_container_width=True)
+    # Vinculación directa con tu archivo de logo real cargado en el repositorio
+    try:
+        st.image("Logo_bogoapts_dashboard.PNG", use_container_width=True)
+    except:
+        st.caption("🏢 *Subir 'Logo_bogoapts_dashboard.PNG' a GitHub para activar el logo personalizado*")
+        
     st.markdown("## 📊 Control de Paid Media")
     st.write("Propiedad: **BogoApts**")
     st.markdown("---")
