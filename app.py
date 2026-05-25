@@ -57,8 +57,8 @@ with st.sidebar:
     st.markdown("---")
     mes_seleccionado = st.selectbox("📅 Seleccione el Mes de Reporte:", options=meses_disponibles)
 
-# --- CONEXIÓN DINÁMICA CON LA URL TEXTUAL VERIFICADA ---
-url_base = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHlX9sx0kOvNg-150YRE42W0/"
+# --- CONEXIÓN DINÁMICA CON EL ID TRANSCRITO EXACTO DE LA FOTO ---
+url_base = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHlX9sx0kOvNg-15OYRE42W0/"
 url_pacing = get_csv_url_by_sheet(url_base, mes_seleccionado)
 
 try:
@@ -103,4 +103,10 @@ try:
     # 4. EXTRACCIÓN INVERSA DE FECHA DE ACTUALIZACIÓN
     fecha_update = "N/D"
     if len(df_datos) > 0 and len(df_raw.columns) > col_idx_fecha:
-        for row_pos in range(len(df_raw) - 1, idx_header,
+        for row_pos in range(len(df_raw) - 1, idx_header, -1):
+            val_celda = str(df_raw.iloc[row_pos, col_idx_fecha]).strip()
+            val_lower = val_celda.lower()
+            
+            if val_celda != '' and val_lower not in ['nan', 'none', '<na>', '-', 'null', 'total']:
+                if not any(k in val_lower for k in ['actualiz', 'pacing', 'fecha', 'campaign']):
+                    fecha_update = val_celda
