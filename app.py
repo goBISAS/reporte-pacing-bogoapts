@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import re
+import urllib.parse
 
 # 1. Configuración de la página de Streamlit
 st.set_page_config(
@@ -13,31 +14,25 @@ st.set_page_config(
 )
 
 # Estilo CSS personalizado para cumplir con la paleta de colores del cliente
-# Principal: #808080, Secundario: #FFFFFF, Fondo: #000000
 st.markdown("""
     <style>
-        /* Fondo de la aplicación */
         .stApp {
             background-color: #000000;
             color: #FFFFFF;
         }
-        /* Títulos y textos generales */
         h1, h2, h3, p, span, label {
             color: #FFFFFF !important;
         }
-        /* Contenedores de métricas superiores */
         div[data-testid="stMetric"] {
             background-color: #1A1A1A;
             border-left: 4px solid #808080;
             padding: 15px;
             border-radius: 5px;
         }
-        /* Sidebar personalizado */
         section[data-testid="stSidebar"] {
             background-color: #111111;
             border-right: 1px solid #333333;
         }
-        /* Estilo para los expanders */
         .streamlit-expanderHeader {
             background-color: #1A1A1A !important;
             color: #FFFFFF !important;
@@ -48,12 +43,15 @@ st.markdown("""
 
 # 2. Funciones de Carga y Procesamiento de Datos (Cacheado a 10 min)
 @st.cache_data(ttl=600)
-def load_and_process_data(sheet_url):
+def load_and_process_data(sheet_url, sheet_name="mayo 26"):
     try:
-        # Convertir URL de visualización a exportación CSV limpia
-        csv_url = sheet_url.replace('/edit?gid=', '/export?format=csv&gid=')
-        if '/export?' not in csv_url:
-            csv_url = re.sub(r'/edit#gid=\d+', '', sheet_url) + '/export?format=csv'
+        # Sanitizar y codificar el nombre de la hoja para la URL
+        encoded_sheet_name = urllib.parse.quote(sheet_name)
+        
+        # Construir la URL de exportación apuntando explícitamente a la pestaña requerida
+        # Eliminamos parámetros gid antiguos para evitar conflictos y forzamos la hoja por nombre
+        base_url = sheet_url.split('/edit')[0]
+        csv_url = f"{base_url}/export?format=csv&sheet={encoded_sheet_name}"
         
         # Carga del encabezado para extraer el Presupuesto Mensual (filas 1-5)
         df_header = pd.read_csv(csv_url, nrows=5, header=None)
@@ -73,11 +71,10 @@ def load_and_process_data(sheet_url):
         df = pd.read_csv(csv_url, skiprows=5)
         df.columns = [str(c).strip() for c in df.columns]
         
-        if df.empty:
+        if df.empty or len(df.columns) < 2:
             return pd.DataFrame(), presupuesto_mensual
 
         # --- SISTEMA FAILSAFE: Mapeo Flexible de Columnas ---
-        # Buscamos coincidencias con listas de sinónimos comunes
         camp_matches = [c for c in df.columns if any(k in c.lower() for k in ['campa', 'name', 'nombre', 'ad group'])]
         plat_matches = [c for c in df.columns if any(k in c.lower() for k in ['plataforma', 'medio', 'source', 'network', 'canal'])]
         spend_matches = [c for c in df.columns if any(k in c.lower() for k in ['spend', 'invers', 'gasto', 'valor', 'cop'])]
@@ -85,7 +82,7 @@ def load_and_process_data(sheet_url):
         res_matches = [c for c in df.columns if any(k in c.lower() for k in ['result', 'convers', 'compras'])]
         cpa_matches = [c for c in df.columns if any(k in c.lower() for k in ['cpa', 'costo por'])]
 
-        # Si el list comprehension falla, asignamos por índice físico de la tabla por seguridad (Failsafe definitivo)
+        # Asignación segura por posición si los nombres no coinciden exactamente
         campaign_col = camp_matches[0] if camp_matches else df.columns[1] if len(df.columns) > 1 else df.columns[0]
         platform_col = plat_matches[0] if plat_matches else df.columns[0]
         spend_col = spend_matches[0] if spend_matches else df.columns[3] if len(df.columns) > 3 else df.columns[-1]
@@ -99,7 +96,7 @@ def load_and_process_data(sheet_url):
         df = df[~df[platform_col].astype(str).str.upper().str.contains('TOTAL', na=False)]
         df = df.dropna(subset=[campaign_col, platform_col])
 
-        # Limpieza robusta de monedas / strings a float
+        # Limpieza de monedas / strings a float
         def clean_currency(val):
             if pd.isna(val):
                 return 0.0
@@ -108,7 +105,6 @@ def load_and_process_data(sheet_url):
             try:
                 return float(val_str)
             except ValueError:
-                # Si viene un formato con decimales reales flotantes:
                 try:
                     return float(str(val).replace('$', '').replace(',', '').strip())
                 except:
@@ -116,7 +112,7 @@ def load_and_process_data(sheet_url):
 
         df[spend_col] = df[spend_col].apply(clean_currency)
         
-        # Mapeo al DataFrame final unificado
+        # Construcción del DataFrame Estructurado Final
         mapped_df = pd.DataFrame()
         mapped_df['Medio'] = df[platform_col]
         mapped_df['Campaña'] = df[campaign_col]
@@ -135,27 +131,30 @@ def load_and_process_data(sheet_url):
         
         mapped_df['Objetivo'] = mapped_df['Objetivo'].fillna('Official Conversions')
         
+        # Failsafe: Filtrar filas donde el Spend sea menor o igual a cero para evitar errores en Plotly
+        mapped_df = mapped_df[mapped_df['Spend'] > 0]
+        
         return mapped_df, presupuesto_mensual
         
     except Exception as e:
-        st.error(f"Error crítico en lectura de la arquitectura de datos: {e}")
+        st.error(f"Error crítico en lectura de la hoja '{sheet_name}': {e}")
         return pd.DataFrame(), 0.0
 
 # 3. Sidebar e Identidad Visual (Branding)
 st.sidebar.image("Logo_bogoapts_dashboard.PNG", use_container_width=True)
 st.sidebar.title("Bogoapts Dashboard")
 st.sidebar.markdown("""
-**Control de Rendimiento de Paid Media** *Versión 1.1 Estable* ___
+**Control de Rendimiento de Paid Media** *Versión 1.2 Estable* ___
 **Cliente:** Bogoapts  
+**Hoja activa:** mayo 26  
 **Entorno:** Streamlit Cloud  
-**Frecuencia:** Tiempo Real (API Cacheada)
 """)
 
 # URL de origen de datos asignada
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHlX9sx0kOvNg-150YRE42W0/edit?gid=388077940#gid=388077940"
 
-# Ejecución de Pipeline de Datos
-df_clean, presupuesto = load_and_process_data(SHEET_URL)
+# Ejecución de Pipeline de Datos especificando explícitamente la pestaña objetivo
+df_clean, presupuesto = load_and_process_data(SHEET_URL, sheet_name="mayo 26")
 
 if not df_clean.empty:
     # 4. Cálculo Automático en Python del Gasto acumulado (Requerimiento Estricto)
@@ -163,7 +162,7 @@ if not df_clean.empty:
     dia_actual = datetime.now().day
     
     if presupuesto == 0:
-        presupuesto = 15000000.0  # Fallback corporativo en caso de cabecera vacía
+        presupuesto = 15000000.0  # Fallback seguro corporativo
 
     # 5. Métricas Superiores (st.metric)
     st.title("📊 Rendimiento de Paid Media — Bogoapts")
@@ -223,4 +222,4 @@ if not df_clean.empty:
         st.dataframe(df_display, use_container_width=True, hide_index=True)
 
 else:
-    st.warning("⚠️ El archivo de Google Sheets se leyó correctamente, pero la tabla de datos procesada está vacía. Verifica que haya registros debajo de la fila 6.")
+    st.warning("⚠️ No se encontraron registros con inversión válida (> 0) en la pestaña 'mayo 26'. Revisa que las celdas de gasto no estén vacías o en cero en esa hoja específica.")
