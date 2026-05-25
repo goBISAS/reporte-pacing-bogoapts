@@ -13,25 +13,31 @@ st.set_page_config(
 )
 
 # Estilo CSS personalizado para cumplir con la paleta de colores del cliente
+# Principal: #808080, Secundario: #FFFFFF, Fondo: #000000
 st.markdown("""
     <style>
+        /* Fondo de la aplicación */
         .stApp {
             background-color: #000000;
             color: #FFFFFF;
         }
+        /* Títulos y textos generales */
         h1, h2, h3, p, span, label {
             color: #FFFFFF !important;
         }
+        /* Contenedores de métricas superiores */
         div[data-testid="stMetric"] {
             background-color: #1A1A1A;
             border-left: 4px solid #808080;
             padding: 15px;
             border-radius: 5px;
         }
+        /* Sidebar personalizado */
         section[data-testid="stSidebar"] {
             background-color: #111111;
             border-right: 1px solid #333333;
         }
+        /* Estilo para los expanders */
         .streamlit-expanderHeader {
             background-color: #1A1A1A !important;
             color: #FFFFFF !important;
@@ -47,7 +53,7 @@ def load_and_process_data(sheet_url, gid_id="388077940"):
         base_url = sheet_url.split('/edit')[0]
         csv_url = f"{base_url}/export?format=csv&gid={gid_id}"
         
-        # Carga del encabezado para extraer el Presupuesto Mensual
+        # Carga del encabezado para extraer el Presupuesto Mensual (filas 1-5)
         df_header = pd.read_csv(csv_url, nrows=5, header=None)
         
         presupuesto_mensual = 0.0
@@ -67,7 +73,7 @@ def load_and_process_data(sheet_url, gid_id="388077940"):
         if df.empty or len(df.columns) < 2:
             return pd.DataFrame(), presupuesto_mensual
 
-        # --- MAPEO FLEXIBLE DE COLUMNAS ---
+        # --- SISTEMA FAILSAFE: Mapeo Flexible de Columnas ---
         camp_matches = [c for c in df.columns if any(k in c.lower() for k in ['campa', 'name', 'nombre', 'ad group'])]
         plat_matches = [c for c in df.columns if any(k in c.lower() for k in ['plataforma', 'medio', 'source', 'network', 'canal'])]
         spend_matches = [c for c in df.columns if any(k in c.lower() for k in ['spend', 'invers', 'gasto', 'valor', 'cop'])]
@@ -83,11 +89,12 @@ def load_and_process_data(sheet_url, gid_id="388077940"):
         results_col = res_matches[0] if res_matches else None
         cpa_col = cpa_matches[0] if cpa_matches else None
 
-        # Filtrar filas "TOTAL"
+        # Requerimiento Estricto: Filtrar filas "TOTAL"
         df = df[~df[campaign_col].astype(str).str.upper().str.contains('TOTAL', na=False)]
         df = df[~df[platform_col].astype(str).str.upper().str.contains('TOTAL', na=False)]
         df = df.dropna(subset=[campaign_col, platform_col])
 
+        # Limpieza robusta de monedas a float
         def clean_currency(val):
             if pd.isna(val):
                 return 0.0
@@ -103,6 +110,7 @@ def load_and_process_data(sheet_url, gid_id="388077940"):
 
         df[spend_col] = df[spend_col].apply(clean_currency)
         
+        # Construcción del DataFrame Unificado final
         mapped_df = pd.DataFrame()
         mapped_df['Medio'] = df[platform_col].astype(str).str.strip()
         mapped_df['Campaña'] = df[campaign_col].astype(str).str.strip()
@@ -121,27 +129,29 @@ def load_and_process_data(sheet_url, gid_id="388077940"):
         
         mapped_df['Objetivo'] = mapped_df['Objetivo'].replace(['nan', 'None', ''], 'Official Conversions').fillna('Official Conversions')
         
-        # Filtrar registros en cero o negativos para estabilizar el Treemap por completo
+        # Filtrado para que el Treemap renderice correctamente sin valores cero
         mapped_df = mapped_df[mapped_df['Spend'] > 0]
         
         return mapped_df, presupuesto_mensual
         
     except Exception as e:
-        st.error(f"Error crítico en lectura de la arquitectura de datos: {e}")
+        st.error(f"Error crítico en la extracción de la arquitectura de datos: {e}")
         return pd.DataFrame(), 0.0
 
 # 3. Sidebar e Identidad Visual (Branding)
 st.sidebar.image("Logo_bogoapts_dashboard.PNG", use_container_width=True)
 st.sidebar.title("Bogoapts Dashboard")
 st.sidebar.markdown("""
-**Control de Rendimiento de Paid Media** *Versión 1.5 Sólida* ___
+**Control de Rendimiento de Paid Media** *Versión 1.6 Estable* ___
 **Cliente:** Bogoapts  
 **Conexión:** Pacing Target Activo  
 **Entorno:** Streamlit Cloud  
 """)
 
+# URL base asignada
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHlX9sx0kOvNg-150YRE42W0/edit?gid=388077940#gid=388077940"
 
+# Pipeline de ejecución
 df_clean, presupuesto = load_and_process_data(SHEET_URL, gid_id="388077940")
 
 if not df_clean.empty:
@@ -150,7 +160,7 @@ if not df_clean.empty:
     dia_actual = datetime.now().day
     
     if presupuesto == 0:
-        presupuesto = 15000000.0
+        presupuesto = 15000000.0  # Fallback corporativo
 
     # 5. Métricas Superiores
     st.title("📊 Rendimiento de Paid Media — Bogoapts")
@@ -165,18 +175,17 @@ if not df_clean.empty:
 
     st.markdown("---")
 
-    # 6. Gráfica Principal: Plotly Treemap (Estrategia Zero-Format Bug)
+    # 6. Gráfica Principal: Plotly Treemap (Alineado al estándar visual exacto)
     st.subheader("📊 Distribución por Canal y Objetivo")
     
-    # Inyectamos los totales acumulados por plataforma en la columna del nivel 1
+    # Inyectamos totales acumulados en las cadenas del Nivel 1
     plataforma_totals = df_clean.groupby('Medio')['Spend'].sum().to_dict()
     df_clean['Medio_Label'] = df_clean['Medio'].apply(lambda x: f"{x} (${plataforma_totals[x]:,.0f} COP)")
 
-    # Creamos un string pre-formateado en Python para cada bloque para no usar el motor de texto interno de Plotly
-    df_clean['Custom_Text'] = df_clean.apply(
-        lambda r: f"<b>{r['Objetivo']}</b><br>$ {r['Spend']:,.0f} COP", axis=1
-    )
+    # Creamos una columna formateada de Spend exclusiva para que Plotly la asimile en las etiquetas sin fallas
+    df_clean['Inversión_Format'] = df_clean['Spend'].apply(lambda x: f"$ {x:,.0f} COP")
 
+    # Construcción del Treemap usando la arquitectura de jerarquías nativa de Plotly Express
     fig = px.treemap(
         df_clean,
         path=['Medio_Label', 'Objetivo'],
@@ -185,10 +194,10 @@ if not df_clean.empty:
         color_continuous_scale=['#444444', '#808080', '#FFFFFF']
     )
 
-    # Forzamos a Plotly a usar nuestra columna calculada limpia. Cero riesgos de ValueError.
+    # UX Móvil Blindado: Usamos etiquetas nativas de Plotly (label + value formateado)
+    # Esto previene el error interno de dimensiones y fuerza a imprimir el texto adentro sin hover
     fig.update_traces(
-        text=df_clean['Custom_Text'],
-        textinfo="text",
+        texttemplate="<b>%{label}</b><br>$%{value:,.0f} COP",
         textposition="inside"
     )
 
@@ -203,7 +212,7 @@ if not df_clean.empty:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 7. Tabla de Detalles: Rendimiento de Campañas
+    # 7. Tabla de Detalles: Rendimiento de Campañas (Liberado e idéntico a tu benchmark)
     with st.expander("🎯 Rendimiento de Campañas (Bogoapts)"):
         df_display = pd.DataFrame()
         df_display['Campaña'] = df_clean['Campaña']
