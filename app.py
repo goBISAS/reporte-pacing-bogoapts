@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# ESTILOS PREMIUM premium goBIG
+# ESTILOS PREMIUM GO BIG
 st.markdown("""
     <style>
     .main { background-color: #0d0d0d; }
@@ -58,20 +58,20 @@ def limpiar_monto_numerico(valor_str):
 # --- SIDEBAR CONTROL ---
 meses_disponibles = obtener_meses_disponibles()
 with st.sidebar:
-    st.image("https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=150", use_container_width=True) # Fallback elegante
+    st.image("https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=150", use_container_width=True)
     st.markdown("## 📊 Control de Paid Media")
     st.write("Propiedad: **BogoApts**")
     st.markdown("---")
     mes_seleccionado = st.selectbox("📅 Seleccione el Mes de Reporte:", options=meses_disponibles)
 
-# --- CONEXIÓN DINÁMICA ---
+# --- CONEXIÓN DINÁMICA (ID CORREGIDO: Termina en número 0, no en letra O) ---
 url_base = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHIX9sx0kOvNg-150YRE42W0/"
 url_pacing = get_csv_url_by_sheet(url_base, mes_seleccionado)
 
 try:
     df_raw = pd.read_csv(url_pacing, header=None, dtype=str).fillna('')
     
-    # 1. RADAR: Buscar la fila de encabezados (Donde está "Campaign" o "Canal")
+    # 1. RADAR: Buscar la fila de encabezados
     idx_header = None
     for i, row in df_raw.iterrows():
         valores_fila = [str(x).lower() for x in row.tolist()]
@@ -83,7 +83,7 @@ try:
         st.error(f"No se encontró la estructura de campañas en la pestaña '{mes_seleccionado}'. Verifica el archivo de Google Sheets.")
         st.stop()
 
-    # 2. LECTURA LINEAL DEL PRESUPUESTO APROBADO (Fila 2, Columna C en tu Excel)
+    # 2. LECTURA LINEAL DEL PRESUPUESTO APROBADO
     presupuesto_mensual = "$0"
     for i in range(idx_header):
         fila = df_raw.iloc[i].astype(str).tolist()
@@ -96,7 +96,7 @@ try:
         if presupuesto_mensual != "$0":
             break
 
-    # 3. CONSTRUCCIÓN DE TABLA DESDE MATRIZ CRUDA (Bypass posicional invencible)
+    # 3. CONSTRUCCIÓN DE TABLA DESDE MATRIZ CRUDA (Estructura posicional de Cantabria/Hyatt v5.0)
     df_datos = df_raw.iloc[idx_header + 1:].copy()
     
     col_idx_medio = 0  # Columna A: Canal
@@ -107,7 +107,7 @@ try:
     col_idx_cpa = 17   # Columna R: CPA
     col_idx_fecha = 18 # Columna S: Actualizacion Pacing
 
-    # 4. EXTRACCIÓN INVERSA DE LA FECHA DE ACTUALIZACIÓN
+    # 4. EXTRACCIÓN INVERSA DE LA FECHA DE ACTUALIZACIÓN (Inmune a celdas vacías al fondo)
     fecha_update = "N/D"
     if len(df_datos) > 0 and len(df_raw.columns) > col_idx_fecha:
         for row_pos in range(len(df_raw) - 1, idx_header, -1):
@@ -133,7 +133,7 @@ try:
     df_limpio['Resultados'] = df_datos.iloc[:, col_idx_res].astype(str).str.strip() if len(df_datos.columns) > col_idx_res else 'N/D'
     df_limpio['CPA'] = df_datos.iloc[:, col_idx_cpa].astype(str).str.strip() if len(df_datos.columns) > col_idx_cpa else 'N/D'
 
-    # Filtros estructurales de filas basura y totales
+    # Filtros estructurales de filas secundarias y totales
     df_limpio = df_limpio[df_limpio['Campaña'] != '']
     df_limpio = df_limpio[~df_limpio['Campaña'].str.upper().str.contains('TOTAL')]
     df_limpio = df_limpio[~df_limpio['Campaña'].str.lower().str.contains('campaign|campaña')]
@@ -149,7 +149,7 @@ try:
     gasto_total_calculado = df_limpio['Gasto'].sum()
 
     # --- INTERFAZ GRÁFICA ---
-    st.title(f"🏨 Dashboard Gerencial BogoApts: {mes_seleccionado.title()}")
+    st.title(f"🏢 Dashboard Gerencial BogoApts: {mes_seleccionado.title()}")
     
     c1, c2, c3 = st.columns(3)
     with c1: st.metric("Presupuesto Mensual", f"{presupuesto_mensual}")
