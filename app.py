@@ -50,7 +50,7 @@ st.markdown("""
 @st.cache_data(ttl=600)
 def load_and_process_data(sheet_url):
     try:
-        # Convertir URL de visualización a exportación CSV
+        # Convertir URL de visualización a exportación CSV limpia
         csv_url = sheet_url.replace('/edit?gid=', '/export?format=csv&gid=')
         if '/export?' not in csv_url:
             csv_url = re.sub(r'/edit#gid=\d+', '', sheet_url) + '/export?format=csv'
@@ -58,79 +58,80 @@ def load_and_process_data(sheet_url):
         # Carga del encabezado para extraer el Presupuesto Mensual (filas 1-5)
         df_header = pd.read_csv(csv_url, nrows=5, header=None)
         
-        # Búsqueda dinámica de la métrica de presupuesto en las primeras filas
+        # Búsqueda dinámica del presupuesto mensual en las celdas del header
         presupuesto_mensual = 0.0
         for col in df_header.columns:
             for val in df_header[col].dropna():
                 val_str = str(val).strip()
-                if any(k in val_str.lower() for k in ['presupuesto', 'budget', 'total mensual']):
+                if any(k in val_str.lower() for k in ['presupuesto', 'budget', 'total mensual', 'meta']):
                     numbers = re.findall(r'\d+[.,]?\d*[.,]?\d*', val_str)
                     if numbers:
                         clean_num = ''.join(c for c in numbers[0] if c.isdigit())
                         presupuesto_mensual = float(clean_num) if clean_num else 0.0
         
-        # Respaldo en caso de que no haya una celda de texto explícita
-        if presupuesto_mensual == 0.0:
-            for col in df_header.columns:
-                for val in df_header[col].dropna():
-                    try:
-                        clean_val = str(val).replace('$', '').replace(',', '').replace('.', '').strip()
-                        if clean_val.isdigit() and float(clean_val) > 100000:
-                            presupuesto_mensual = float(clean_val)
-                            break
-                    except:
-                        continue
-
         # Carga de los datos de campaña (fila 6 en adelante)
         df = pd.read_csv(csv_url, skiprows=5)
         df.columns = [str(c).strip() for c in df.columns]
         
-        # Identificación e indexación adaptativa de columnas clave de la hoja
-        campaign_col = [c for c in df.columns if 'campa' in c.lower() or 'name' in c.lower()][0]
-        platform_col = [c for c in df.columns if 'plataforma' in c.lower() or 'medio' in c.lower() or 'source' in c.lower()][0]
-        spend_col = [c for c in df.columns if 'spend' in c.lower() or 'invers' in c.lower() or 'gasto' in c.lower()][0]
-        
-        objective_col = [c for c in df.columns if 'objetivo' in c.lower() or 'objective' in c.lower()]
-        objective_col = objective_col[0] if objective_col else None
-        
-        results_col = [c for c in df.columns if 'result' in c.lower() or 'convers' in c.lower()]
-        results_col = results_col[0] if results_col else None
-        
-        cpa_col = [c for c in df.columns if 'cpa' in c.lower() or 'costo por' in c.lower()]
-        cpa_col = cpa_col[0] if cpa_col else None
+        if df.empty:
+            return pd.DataFrame(), presupuesto_mensual
 
-        # Requerimiento Estricto: Descartar filas con "TOTAL" para evitar duplicaciones
-        df = df[~df[campaign_col].astype(str).str.upper().str.contains('TOTAL')]
-        df = df[~df[platform_col].astype(str).str.upper().str.contains('TOTAL')]
+        # --- SISTEMA FAILSAFE: Mapeo Flexible de Columnas ---
+        # Buscamos coincidencias con listas de sinónimos comunes
+        camp_matches = [c for c in df.columns if any(k in c.lower() for k in ['campa', 'name', 'nombre', 'ad group'])]
+        plat_matches = [c for c in df.columns if any(k in c.lower() for k in ['plataforma', 'medio', 'source', 'network', 'canal'])]
+        spend_matches = [c for c in df.columns if any(k in c.lower() for k in ['spend', 'invers', 'gasto', 'valor', 'cop'])]
+        obj_matches = [c for c in df.columns if any(k in c.lower() for k in ['objetivo', 'objective', 'goal', 'tipo'])]
+        res_matches = [c for c in df.columns if any(k in c.lower() for k in ['result', 'convers', 'compras'])]
+        cpa_matches = [c for c in df.columns if any(k in c.lower() for k in ['cpa', 'costo por'])]
+
+        # Si el list comprehension falla, asignamos por índice físico de la tabla por seguridad (Failsafe definitivo)
+        campaign_col = camp_matches[0] if camp_matches else df.columns[1] if len(df.columns) > 1 else df.columns[0]
+        platform_col = plat_matches[0] if plat_matches else df.columns[0]
+        spend_col = spend_matches[0] if spend_matches else df.columns[3] if len(df.columns) > 3 else df.columns[-1]
+        
+        objective_col = obj_matches[0] if obj_matches else None
+        results_col = res_matches[0] if res_matches else None
+        cpa_col = cpa_matches[0] if cpa_matches else None
+
+        # Requerimiento Estricto: Filtrar filas "TOTAL"
+        df = df[~df[campaign_col].astype(str).str.upper().str.contains('TOTAL', na=False)]
+        df = df[~df[platform_col].astype(str).str.upper().str.contains('TOTAL', na=False)]
         df = df.dropna(subset=[campaign_col, platform_col])
 
-        # Requerimiento Estricto: Limpieza de la columna Spend (COP) a float puro
+        # Limpieza robusta de monedas / strings a float
         def clean_currency(val):
             if pd.isna(val):
                 return 0.0
             val_str = str(val).replace('$', '').replace('COP', '')
-            val_str = re.sub(r'[\s,.]', '', val_str) # Remueve separadores visuales
+            val_str = re.sub(r'[\s,.]', '', val_str)
             try:
                 return float(val_str)
             except ValueError:
-                return 0.0
+                # Si viene un formato con decimales reales flotantes:
+                try:
+                    return float(str(val).replace('$', '').replace(',', '').strip())
+                except:
+                    return 0.0
 
         df[spend_col] = df[spend_col].apply(clean_currency)
         
+        # Mapeo al DataFrame final unificado
+        mapped_df = pd.DataFrame()
+        mapped_df['Medio'] = df[platform_col]
+        mapped_df['Campaña'] = df[campaign_col]
+        mapped_df['Objetivo'] = df[objective_col] if objective_col else 'Official Conversions'
+        mapped_df['Spend'] = df[spend_col]
+        
         if results_col:
-            df[results_col] = pd.to_numeric(df[results_col], errors='coerce').fillna(0)
-        if cpa_col:
-            df[cpa_col] = df[cpa_col].apply(clean_currency)
+            mapped_df['Resultados'] = pd.to_numeric(df[results_col], errors='coerce').fillna(0)
+        else:
+            mapped_df['Resultados'] = 0
             
-        # Homologación a DataFrame Estructurado estándar
-        mapped_df = pd.DataFrame({
-            'Medio': df[platform_col],
-            'Campaña': df[campaign_col],
-            'Objetivo': df[objective_col] if objective_col else 'Official Conversions',
-            'Spend': df[spend_col],
-            'Resultados': df[results_col] if results_col else 0,
-            'CPA': df[cpa_col] if cpa_col else 0.0
-        })
+        if cpa_col:
+            mapped_df['CPA'] = df[cpa_col].apply(clean_currency)
+        else:
+            mapped_df['CPA'] = 0.0
         
         mapped_df['Objetivo'] = mapped_df['Objetivo'].fillna('Official Conversions')
         
@@ -144,7 +145,7 @@ def load_and_process_data(sheet_url):
 st.sidebar.image("Logo_bogoapts_dashboard.PNG", use_container_width=True)
 st.sidebar.title("Bogoapts Dashboard")
 st.sidebar.markdown("""
-**Control de Rendimiento de Paid Media** *Versión 1.0 Estándar* ___
+**Control de Rendimiento de Paid Media** *Versión 1.1 Estable* ___
 **Cliente:** Bogoapts  
 **Entorno:** Streamlit Cloud  
 **Frecuencia:** Tiempo Real (API Cacheada)
@@ -162,7 +163,7 @@ if not df_clean.empty:
     dia_actual = datetime.now().day
     
     if presupuesto == 0:
-        presupuesto = 15000000.0  # Fallback seguro de negocio si la cabecera está vacía
+        presupuesto = 15000000.0  # Fallback corporativo en caso de cabecera vacía
 
     # 5. Métricas Superiores (st.metric)
     st.title("📊 Rendimiento de Paid Media — Bogoapts")
@@ -189,7 +190,7 @@ if not df_clean.empty:
         path=['Medio_Label', 'Objetivo'],
         values='Spend',
         color='Spend',
-        color_continuous_scale=['#444444', '#808080', '#FFFFFF'] # Escala monocromática corporativa
+        color_continuous_scale=['#444444', '#808080', '#FFFFFF']
     )
 
     # Requerimiento UX Móvil: Uso estricto de texttemplate para impresión nativa sin necesidad de hover
@@ -222,4 +223,4 @@ if not df_clean.empty:
         st.dataframe(df_display, use_container_width=True, hide_index=True)
 
 else:
-    st.error("Error en la extracción. Asegúrate de que las credenciales de lectura compartida de Google Sheets estén activas.")
+    st.warning("⚠️ El archivo de Google Sheets se leyó correctamente, pero la tabla de datos procesada está vacía. Verifica que haya registros debajo de la fila 6.")
