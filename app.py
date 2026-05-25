@@ -5,7 +5,7 @@ from datetime import datetime
 import urllib.parse
 import re
 
-# CONFIGURACIÓN DE PÁGINA
+# CONFIGURACIÓN DE PÁGINA PREMIUM
 st.set_page_config(
     page_title="BogoApts - Paid Media Dashboard",
     page_icon="🏢",
@@ -48,13 +48,6 @@ def get_csv_url_by_sheet(url, sheet_name):
     except:
         return url
 
-def limpiar_monto_numerico(valor_str):
-    try:
-        limpio = re.sub(r'[^\d.-]', '', str(valor_str))
-        return float(limpio) if limpio else 0.0
-    except:
-        return 0.0
-
 # --- SIDEBAR CONTROL ---
 meses_disponibles = obtener_meses_disponibles()
 with st.sidebar:
@@ -64,11 +57,13 @@ with st.sidebar:
     st.markdown("---")
     mes_seleccionado = st.selectbox("📅 Seleccione el Mes de Reporte:", options=meses_disponibles)
 
-# --- CONEXIÓN DINÁMICA (ID CORREGIDO: Termina en número 0, no en letra O) ---
+# --- CONEXIÓN DINÁMICA ---
+# La URL base utiliza rigurosamente el ID público extraído del navegador: 1Qkw-Fi3tLvY68maHxJOmHIX9sx0kOvNg-150YRE42W0
 url_base = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHIX9sx0kOvNg-150YRE42W0/"
 url_pacing = get_csv_url_by_sheet(url_base, mes_seleccionado)
 
 try:
+    # Intento de lectura remota del CSV de Google
     df_raw = pd.read_csv(url_pacing, header=None, dtype=str).fillna('')
     
     # 1. RADAR: Buscar la fila de encabezados
@@ -80,10 +75,10 @@ try:
             break
     
     if idx_header is None:
-        st.error(f"No se encontró la estructura de campañas en la pestaña '{mes_seleccionado}'. Verifica el archivo de Google Sheets.")
+        st.error(f"⚠️ Estructura de campaña no localizada en la pestaña '{mes_seleccionado}'. Asegúrate de que el nombre coincide exactamente.")
         st.stop()
 
-    # 2. LECTURA LINEAL DEL PRESUPUESTO APROBADO
+    # 2. LECTURA DEL PRESUPUESTO APROBADO (Fila superior)
     presupuesto_mensual = "$0"
     for i in range(idx_header):
         fila = df_raw.iloc[i].astype(str).tolist()
@@ -96,7 +91,7 @@ try:
         if presupuesto_mensual != "$0":
             break
 
-    # 3. CONSTRUCCIÓN DE TABLA DESDE MATRIZ CRUDA (Estructura posicional de Cantabria/Hyatt v5.0)
+    # 3. CONSTRUCCIÓN DE MATRIZ DE DATOS (Estructura fija Cantabria/Hyatt v5.0)
     df_datos = df_raw.iloc[idx_header + 1:].copy()
     
     col_idx_medio = 0  # Columna A: Canal
@@ -107,7 +102,7 @@ try:
     col_idx_cpa = 17   # Columna R: CPA
     col_idx_fecha = 18 # Columna S: Actualizacion Pacing
 
-    # 4. EXTRACCIÓN INVERSA DE LA FECHA DE ACTUALIZACIÓN (Inmune a celdas vacías al fondo)
+    # 4. EXTRACCIÓN INVERSA DE FECHA DE ACTUALIZACIÓN
     fecha_update = "N/D"
     if len(df_datos) > 0 and len(df_raw.columns) > col_idx_fecha:
         for row_pos in range(len(df_raw) - 1, idx_header, -1):
@@ -119,7 +114,7 @@ try:
                     fecha_update = val_celda
                     break
 
-    # 5. CREACIÓN DEL DATA CLEAN
+    # 5. CREACIÓN Y DEPURACIÓN DEL DATA CLEAN
     df_limpio = pd.DataFrame()
     df_limpio['Campaña'] = df_datos.iloc[:, col_idx_camp].astype(str).str.strip()
     df_limpio['Medio'] = df_datos.iloc[:, col_idx_medio].astype(str).str.strip()
@@ -133,7 +128,7 @@ try:
     df_limpio['Resultados'] = df_datos.iloc[:, col_idx_res].astype(str).str.strip() if len(df_datos.columns) > col_idx_res else 'N/D'
     df_limpio['CPA'] = df_datos.iloc[:, col_idx_cpa].astype(str).str.strip() if len(df_datos.columns) > col_idx_cpa else 'N/D'
 
-    # Filtros estructurales de filas secundarias y totales
+    # Limpieza estricta de filas vacías o de sumatorias parciales
     df_limpio = df_limpio[df_limpio['Campaña'] != '']
     df_limpio = df_limpio[~df_limpio['Campaña'].str.upper().str.contains('TOTAL')]
     df_limpio = df_limpio[~df_limpio['Campaña'].str.lower().str.contains('campaign|campaña')]
@@ -142,13 +137,13 @@ try:
     df_limpio['Gasto'] = df_limpio['Gasto_Raw'].str.replace(r'[^\d.-]', '', regex=True)
     df_limpio['Gasto'] = pd.to_numeric(df_limpio['Gasto'], errors='coerce').fillna(0)
 
-    # 6. CÁLCULOS MACRO
+    # 6. MÁSTER CÁLCULOS
     resumen_medios = df_limpio.groupby('Medio')['Gasto'].sum()
     mapa_medios = {med: f"{med} (${tot:,.0f})" for med, tot in resumen_medios.items()}
     df_limpio['Medio_Labels'] = df_limpio['Medio'].map(mapa_medios).astype(str)
     gasto_total_calculado = df_limpio['Gasto'].sum()
 
-    # --- INTERFAZ GRÁFICA ---
+    # --- INTERFAZ VISUAL ---
     st.title(f"🏢 Dashboard Gerencial BogoApts: {mes_seleccionado.title()}")
     
     c1, c2, c3 = st.columns(3)
@@ -163,7 +158,7 @@ try:
     st.success(f"✅ Sincronización exitosa con la pestaña [{mes_seleccionado}] | Último registro: {fecha_update}")
     st.divider()
 
-    # --- TREEMAP ---
+    # --- VISUALIZACIÓN TREEMAP ---
     st.header("📊 Distribución por Canal y Objetivo")
     df_plot = df_limpio[df_limpio['Gasto'] > 0]
     if not df_plot.empty:
@@ -174,11 +169,12 @@ try:
     else:
         st.warning("No se detectan datos de gasto mayores a $0 para graficar en este periodo.")
 
-    # --- TABLA DETALLE ---
+    # --- EXPANDER CON TABLA DE CONTROL ---
     with st.expander("📝 Detalle General de Campañas"):
         st.dataframe(df_limpio[['Medio', 'Campaña', 'Objetivo', 'Resultados', 'CPA']].sort_values(by='Medio'), use_container_width=True, hide_index=True)
 
 except Exception as e:
     st.error(f"Error detectado en el procesamiento: {e}")
+    st.info(f"💡 Tip Técnico: Verifica que la hoja de cálculo de Google tenga el acceso configurado en 'Cualquier persona con el enlace'.")
 
 st.caption(f"BogoApts Real Estate Analytics | Strategic Analytics by goBIG")
