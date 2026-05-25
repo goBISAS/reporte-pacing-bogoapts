@@ -54,7 +54,7 @@ def load_and_process_data(sheet_url, gid_id="388077940"):
         base_url = sheet_url.split('/edit')[0]
         csv_url = f"{base_url}/export?format=csv&gid={gid_id}"
         
-        # Carga masiva inicial sin saltar filas para limpiar la estructura manualmente
+        # Carga masiva inicial sin procesar tipos para limpiar la estructura manualmente
         df_raw = pd.read_csv(csv_url, header=None)
         
         if df_raw.empty:
@@ -62,29 +62,27 @@ def load_and_process_data(sheet_url, gid_id="388077940"):
 
         # --- EXTRACCIÓN PRECISIÓN: Presupuesto Mensual ---
         presupuesto_mensual = 0.0
-        # Buscamos en el bloque superior el término 'Monthly Approved Budget' o similares
+        # Buscamos en el bloque superior asegurando transformación estricta a string
         for idx, row in df_raw.head(10).iterrows():
-            row_str = row.astype(str).str.lower().values
-            if any('approved budget' in s or 'budget' in s or 'presupuesto' in s for s in row_str):
-                # Extraemos los valores numéricos válidos que estén en la misma fila
+            # Convertimos toda la fila a texto plano e iterable sin valores flotantes huérfanos
+            row_str_list = [str(item).lower() for item in row.dropna().values]
+            if any('approved budget' in s or 'budget' in s or 'presupuesto' in s for s in row_str_list):
                 for cell in row.dropna():
                     cell_clean = re.sub(r'[\s\$,.COP]', '', str(cell))
-                    if cell_clean.isdigit() and float(cell_clean) > 0:
-                        # Si encontramos el valor numérico en el bloque (ej. 5000000)
+                    if cell_clean.isdigit():
                         val_float = float(cell_clean)
                         if val_float > presupuesto_mensual:
                             presupuesto_mensual = val_float
 
-        # --- EXTRACCIÓN PRECISIÓN: Tabla de Campañas (Buscando la Fila de Encabezados reales) ---
+        # --- EXTRACCIÓN PRECISIÓN: Tabla de Campañas ---
         header_row_idx = 5 # Defecto estándar (fila 6)
         for idx, row in df_raw.head(15).iterrows():
-            row_str = row.astype(str).str.lower().values
-            # Localizamos la fila que contiene las columnas técnicas del reporte de paid media
-            if any('spend' in s or 'invers' in s or 'gasto' in s for s in row_str) and any('campa' in s or 'name' in s for s in row_str):
+            row_str_list = [str(item).lower() for item in row.dropna().values]
+            if any('spend' in s or 'invers' in s or 'gasto' in s for s in row_str_list) and any('campa' in s or 'name' in s for s in row_str_list):
                 header_row_idx = idx
                 break
                 
-        # Recargamos el DataFrame utilizando el índice de encabezado exacto descubierto
+        # Recargamos el DataFrame utilizando el índice descubierto
         df = pd.read_csv(csv_url, skiprows=header_row_idx)
         df.columns = [str(c).strip() for c in df.columns]
 
@@ -104,11 +102,10 @@ def load_and_process_data(sheet_url, gid_id="388077940"):
         results_col = res_matches[0] if res_matches else None
         cpa_col = cpa_matches[0] if cpa_matches else None
 
-        # Limpieza estricta de filas vacías o con residuos de la cabecera de Sheets
+        # Limpieza estricta de filas vacías
         df = df.dropna(subset=[campaign_col, platform_col])
-        df = df[df[campaign_col].astype(str).str.strip() != '']
         
-        # Requerimiento Estricto: Filtrado de filas de Totales
+        # Filtrado estricto asegurando tipo string antes de aplicar métodos de texto (.str)
         df = df[~df[campaign_col].astype(str).str.upper().str.contains('TOTAL', na=False)]
         df = df[~df[platform_col].astype(str).str.upper().str.contains('TOTAL', na=False)]
         df = df[~df[campaign_col].astype(str).str.lower().str.contains('monthly', na=False)]
@@ -148,7 +145,7 @@ def load_and_process_data(sheet_url, gid_id="388077940"):
         
         mapped_df['Objetivo'] = mapped_df['Objetivo'].replace(['nan', 'None', '', 'NAN'], 'Official Conversions').fillna('Official Conversions')
         
-        # Filtrado preventivo de registros con inversión no válida
+        # Filtrar registros en cero o vacíos
         mapped_df = mapped_df[mapped_df['Spend'] > 0]
         
         return mapped_df, presupuesto_mensual
@@ -161,7 +158,7 @@ def load_and_process_data(sheet_url, gid_id="388077940"):
 st.sidebar.image("Logo_bogoapts_dashboard.PNG", use_container_width=True)
 st.sidebar.title("Bogoapts Dashboard")
 st.sidebar.markdown("""
-**Control de Rendimiento de Paid Media** *Versión 1.7 Estable* ___
+**Control de Rendimiento de Paid Media** *Versión 1.8 Estable* ___
 **Cliente:** Bogoapts  
 **Conexión:** GID Target Activo  
 **Entorno:** Streamlit Cloud  
@@ -178,9 +175,8 @@ if not df_clean.empty:
     gasto_total = float(df_clean['Spend'].sum())
     dia_actual = datetime.now().day
     
-    # Fallback contextual por si la celda viniera en blanco
     if presupuesto == 0:
-        presupuesto = 5000000.0  # Asignado según tu captura de pantalla de referencia
+        presupuesto = 5000000.0  # Mapeo según tu captura de pantalla de referencia
 
     # 5. Sección Superior de Métricas (st.metric)
     st.title("📊 Rendimiento de Paid Media — Bogoapts")
@@ -198,8 +194,6 @@ if not df_clean.empty:
     # 6. Gráfica Principal: Plotly Treemap (Estrategia de Agregación Segura)
     st.subheader("📊 Distribución por Canal y Objetivo")
     
-    # AGREGACIÓN PREVIA EN PANDAS: Consolidamos los datos por clave antes de dárselos a Plotly
-    # Esto elimina de raíz cualquier conflicto de dimensiones o ValueError en las trazas
     df_grouped = df_clean.groupby(['Medio', 'Objetivo'], as_index=False)['Spend'].sum()
     
     # Inyectamos totales acumulados por canal en las etiquetas del Treemap
@@ -214,7 +208,7 @@ if not df_clean.empty:
         color_continuous_scale=['#444444', '#808080', '#FFFFFF']
     )
 
-    # UX Móvil Nativo Estable sin riesgo de colisiones de índices
+    # UX Móvil Nativo Estable
     fig.update_traces(
         texttemplate="<b>%{label}</b><br>$%{value:,.0f} COP",
         textposition="inside"
@@ -231,7 +225,7 @@ if not df_clean.empty:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # 7. Tabla de Detalles: Rendimiento de Campañas (Desplegado Completo de forma Correcta)
+    # 7. Tabla de Detalles: Rendimiento de Campañas
     with st.expander("🎯 Rendimiento de Campañas (Bogoapts)"):
         df_display = pd.DataFrame()
         df_display['Campaña'] = df_clean['Campaña']
