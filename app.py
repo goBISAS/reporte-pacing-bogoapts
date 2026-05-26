@@ -67,6 +67,7 @@ partes_mes = mes_seleccionado.split(" ")
 mes_nombre_inf = partes_mes[0].lower().strip()
 ano_numero_inf = partes_mes[1].strip()
 
+
 # ==========================================================
 # SECCIÓN 1: BACKEND - EXTRACCIÓN Y PROCESAMIENTO
 # ==========================================================
@@ -85,10 +86,45 @@ try:
     df_raw_pacing = pd.read_csv(url_pacing, header=None, dtype=str).fillna('')
     idx_header = 2 
     
-    for i in range(idx_header + 1):
-        if i >= len(df_raw_pacing): break
-        fila = df_raw_pacing.iloc[i].astype(str).tolist()
-        for j, celda in enumerate(fila):
-            celda_limpia = celda.lower().strip()
-            if 'approved' in celda_limpia or 'aprobado' in celda_limpia:
-                if j + 1 < len
+    # Búsqueda ultra corta y segura de presupuesto (Línea protegida contra cortes)
+    for i in range(min(5, len(df_raw_pacing))):
+        fila = [str(x).lower().strip() for x in df_raw_pacing.iloc[i].tolist()]
+        if 'approved' in fila or 'aprobado' in fila:
+            idx_target = fila.index('approved') if 'approved' in fila else fila.index('aprobado')
+            if idx_target + 1 < len(fila):
+                presupuesto_mensual = str(df_raw_pacing.iloc[i, idx_target + 1]).strip()
+            break
+
+    df_datos_pacing = df_raw_pacing.iloc[idx_header + 1:].copy()
+    
+    col_idx_medio = 0
+    col_idx_camp = 1
+    col_idx_status = 4
+    col_idx_spend = 7
+    col_idx_res = 14
+    col_idx_tipo = 15
+    col_idx_cpa = 17
+    col_idx_fecha = 18
+
+    if len(df_datos_pacing) > 0 and len(df_raw_pacing.columns) > col_idx_fecha:
+        for row_pos in range(len(df_raw_pacing) - 1, idx_header, -1):
+            val_celda = str(df_raw_pacing.iloc[row_pos, col_idx_fecha]).strip()
+            val_lower = val_celda.lower()
+            if val_celda != '' and val_lower not in ['nan', 'none', '<na>', '-', 'null', 'total']:
+                if not any(k in val_lower for k in ['actualiz', 'pacing', 'fecha', 'campaign', 'nombre']):
+                    fecha_update = val_celda
+                    break
+
+    lista_campanas = []
+    for idx, row in df_datos_pacing.iterrows():
+        if len(row) <= max(col_idx_camp, col_idx_medio): continue
+        celda_camp = str(row[col_idx_camp]).strip()
+        celda_medio = str(row[col_idx_medio]).strip()
+        if celda_camp == '' or any(k in celda_camp.lower() for k in ['campaign', 'campaña', 'nombre de la', 'total']):
+            continue
+        celda_status = str(row[col_idx_status]).strip() if len(row) > col_idx_status else 'N/D'
+        if celda_status == '': celda_status = 'N/D'
+        celda_spend = str(row[col_idx_spend]).strip() if len(row) > col_idx_spend else '0'
+        celda_tipo = str(row[col_idx_tipo]).strip() if len(row) > col_idx_tipo else 'General'
+        if celda_tipo == '': celda_tipo = 'Sin Objetivo'
+        celda_res = str(row
