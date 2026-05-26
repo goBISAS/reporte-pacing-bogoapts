@@ -67,7 +67,6 @@ partes_mes = mes_seleccionado.split(" ")
 mes_nombre_inf = partes_mes[0].lower().strip()
 ano_numero_inf = partes_mes[1].strip()
 
-
 # ==========================================================
 # SECCIÓN 1: PROCESAMIENTO EXCLUSIVO DE DATOS (BACKEND)
 # ==========================================================
@@ -100,63 +99,4 @@ try:
 
     df_datos_pacing = df_raw_pacing.iloc[idx_header + 1:].copy()
     col_idx_medio = 0; col_idx_camp = 1; col_idx_status = 4
-    col_idx_spend = 7; col_idx_res = 14; col_idx_tipo = 15; col_idx_cpa = 17; col_idx_fecha = 18
-
-    if len(df_datos_pacing) > 0 and len(df_raw_pacing.columns) > col_idx_fecha:
-        for row_pos in range(len(df_raw_pacing) - 1, idx_header, -1):
-            val_celda = str(df_raw_pacing.iloc[row_pos, col_idx_fecha]).strip()
-            val_lower = val_celda.lower()
-            if val_celda != '' and val_lower not in ['nan', 'none', '<na>', '-', 'null', 'total']:
-                if not any(k in val_lower for k in ['actualiz', 'pacing', 'fecha', 'campaign', 'nombre']):
-                    fecha_update = val_celda
-                    break
-
-    lista_campanas = []
-    for idx, row in df_datos_pacing.iterrows():
-        if len(row) <= max(col_idx_camp, col_idx_medio): continue
-        celda_camp = str(row[col_idx_camp]).strip()
-        celda_medio = str(row[col_idx_medio]).strip()
-        if celda_camp == '' or any(k in celda_camp.lower() for k in ['campaign', 'campaña', 'nombre de la', 'total']):
-            continue
-        celda_status = str(row[col_idx_status]).strip() if len(row) > col_idx_status else 'N/D'
-        if celda_status == '': celda_status = 'N/D'
-        celda_spend = str(row[col_idx_spend]).strip() if len(row) > col_idx_spend else '0'
-        celda_tipo = str(row[col_idx_tipo]).strip() if len(row) > col_idx_tipo else 'General'
-        if celda_tipo == '': celda_tipo = 'Sin Objetivo'
-        celda_res = str(row[col_idx_res]).strip() if len(row) > col_idx_res else 'N/D'
-        celda_cpa = str(row[col_idx_cpa]).strip() if len(row) > col_idx_cpa else 'N/D'
-
-        lista_campanas.append({
-            'Medio_Raw': celda_medio, 'Campaña': celda_camp, 'Estado': celda_status,
-            'Gasto_Raw': celda_spend, 'Objetivo': celda_tipo, 'Resultados': celda_res, 'CPA': celda_cpa
-        })
-
-    df_limpio_pacing = pd.DataFrame(lista_campanas)
-    if not df_limpio_pacing.empty:
-        df_limpio_pacing['Medio_Raw'] = df_limpio_pacing['Medio_Raw'].replace(['', 'nan', 'NaN'], pd.NA)
-        df_limpio_pacing['Medio'] = df_limpio_pacing['Medio_Raw'].ffill().fillna('Sin Medio')
-        df_limpio_pacing['Gasto'] = df_limpio_pacing['Gasto_Raw'].str.replace(r'[^\d.-]', '', regex=True)
-        df_limpio_pacing['Gasto'] = pd.to_numeric(df_limpio_pacing['Gasto'], errors='coerce').fillna(0)
-
-        resumen_medios = df_limpio_pacing.groupby('Medio')['Gasto'].sum()
-        mapa_medios = {med: f"{med} (${tot:,.0f})" for med, tot in resumen_medios.items()}
-        df_limpio_pacing['Medio_Labels'] = df_limpio_pacing['Medio'].map(mapa_medios).astype(str)
-        gasto_total_calculado = df_limpio_pacing['Gasto'].sum()
-        pacing_exitoso = True
-except Exception as e:
-    st.error(f"Error procesando datos de Pauta: {e}")
-
-# --- BLOQUE ATRIBUCIÓN Y ROAS ---
-url_roas_csv = "https://docs.google.com/spreadsheets/d/190FjfTc6ZsAsRsj3swki1Ch6BME6j2CbfgyxcUt1pY/gviz/tq?tqx=out:csv&gid=0"
-
-inv_roas_mes = "$0"; ventas_roas_mes = "$0"; roas_real = "0.0"; roas_esperado = "0.0"
-cumplimiento_roas = "0.0%"; leads_mes = "0"; cotizaciones_mes = "0"; cierres_mes = "0"
-roas_exitoso = False
-
-try:
-    df_raw_roas = pd.read_csv(url_roas_csv, header=None, dtype=str).fillna('')
-    
-    # 1. Extracción e indexación de la Tabla Superior (Filas 4 a 31)
-    filas_superior = []
-    for r_idx in range(3, min(31, len(df_raw_roas))):
-        filas_superior.append(df_raw_roas.iloc[r_idx].astype(str).tolist())
+    col_idx_spend = 7; col_idx_res
