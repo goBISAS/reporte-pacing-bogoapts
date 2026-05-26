@@ -63,7 +63,7 @@ def parse_num(val):
     except: return 0.0
 
 # ==========================================================
-# 2. MENÚ LATERAL
+# 2. MENÚ LATERAL PRINCIPAL
 # ==========================================================
 with st.sidebar:
     try:
@@ -78,13 +78,16 @@ with st.sidebar:
     )
     st.markdown("---")
 
-
 # ==========================================================
 # 3. MÓDULO 1: CONTROL DE PAUTA (PACING)
 # ==========================================================
 if vista_activa == "📊 Control de Pauta (Pacing)":
+    
+    # Declaramos la variable de meses ANTES de usarla
+    meses_disponibles = obtener_meses_disponibles()
+    
     with st.sidebar:
-        mes_seleccionado = st.selectbox("📅 Seleccione el Mes de Reporte:", options=obtener_meses_disponibles())
+        mes_seleccionado = st.selectbox("📅 Seleccione el Mes de Reporte:", options=meses_disponibles)
 
     st.title(f"🏢 Sistema Inteligente BogoApts: {mes_seleccionado.title()}")
 
@@ -97,7 +100,6 @@ if vista_activa == "📊 Control de Pauta (Pacing)":
     df_limpio_pacing = pd.DataFrame()
     pacing_exitoso = False
 
-    # BACKEND PAUTA (Corto y aislado)
     try:
         df_raw_pacing = pd.read_csv(url_pacing, header=None, dtype=str).fillna('')
         idx_header = 2 
@@ -169,6 +171,7 @@ if vista_activa == "📊 Control de Pauta (Pacing)":
         with c1: st.metric("Presupuesto Mensual", f"{presupuesto_mensual}")
         with c2: st.metric("Inversión Ejecutada", f"${gasto_total_calculado:,.0f}")
         with c3:
+            # Aquí es donde fallaba, ahora `meses_disponibles` sí existe
             if mes_seleccionado == meses_disponibles[0]:
                 st.metric("Día de Medición", f"Día {datetime.now().day}")
             else:
@@ -192,7 +195,6 @@ if vista_activa == "📊 Control de Pauta (Pacing)":
     else:
         st.error("No se pudieron cargar los datos de rendimiento de pauta.")
 
-
 # ==========================================================
 # 4. MÓDULO 2: HISTÓRICO Y ROAS (NUEVO & AISLADO)
 # ==========================================================
@@ -203,7 +205,6 @@ elif vista_activa == "📈 Histórico y ROAS":
     df_hist = pd.DataFrame()
     roas_ok = False
     
-    # BACKEND ROAS (Corto y aislado)
     try:
         df_roas_raw = pd.read_csv(url_roas, header=None, dtype=str).fillna('')
         registros = []
@@ -232,7 +233,6 @@ elif vista_activa == "📈 Histórico y ROAS":
     except Exception as e:
         st.error(f"Error de conexión con la hoja ROAS: {e}")
 
-    # FRONTEND ROAS
     if roas_ok and not df_hist.empty:
         total_ventas = df_hist['Ventas Atribuidas'].sum()
         total_inv = df_hist['Inversión Total'].sum()
@@ -284,5 +284,5 @@ elif vista_activa == "📈 Histórico y ROAS":
     else:
         st.info("No se detectaron datos históricos válidos en la hoja. Verifica que haya celdas con números cargados.")
 
-# PIE DE PÁGINA (Común para ambas vistas)
+# PIE DE PÁGINA COMÚN
 st.caption("BogoApts Analytics | Strategic Analytics by goBIG")
