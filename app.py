@@ -75,6 +75,7 @@ try:
     # 1. LECTURA DEL PRESUPUESTO APROBADO (Buscado dinámicamente en las celdas superiores)
     presupuesto_mensual = "$0"
     for i in range(idx_header + 1):
+        if i >= len(df_raw): break
         fila = df_raw.iloc[i].astype(str).tolist()
         for j, celda in enumerate(fila):
             celda_limpia = celda.lower().strip()
@@ -88,10 +89,10 @@ try:
     # 2. CAPTURA DE MATRIZ DE DATOS REALES DE BOGOAPTS
     df_datos = df_raw.iloc[idx_header + 1:].copy()
     
-    # Asignación de índices fijos según la estructura visual de BogoApts
+    # Asignación de índices fijos según la estructura visual real de BogoApts
     col_idx_medio = 0  # Columna A: Medio
     col_idx_camp = 1   # Columna B: Nombre de la campaña
-    col_idx_status = 2 # Columna C: Estado (Activa / Inactiva) -> NUEVA MODIFICACIÓN
+    col_idx_status = 4 # Columna E: Estado (Activa / Pausada) -> AJUSTADO CON ÉXITO A ÍNDICE 4
     col_idx_spend = 7  # Columna H: Inversión (COP)
     col_idx_res = 14   # Columna O: Platform Conversions
     col_idx_tipo = 15  # Columna P: Official Conversions
@@ -110,28 +111,48 @@ try:
                     fecha_update = val_celda
                     break
 
-    # 4. CONSTRUCCIÓN ASIGNADA DEL DATAFRAME PROCESADO
-    df_limpio = pd.DataFrame()
-    df_limpio['Campaña'] = df_datos.iloc[:, col_idx_camp].astype(str).str.strip()
-    df_limpio['Medio'] = df_datos.iloc[:, col_idx_medio].astype(str).str.strip()
-    df_limpio['Estado'] = df_datos.iloc[:, col_idx_status].astype(str).str.strip().replace('', 'N/D') # -> NUEVA ASIGNACIÓN
-    df_limpio['Gasto_Raw'] = df_datos.iloc[:, col_idx_spend].astype(str).str.strip()
+    # 4. CONSTRUCCIÓN PROTEGIDA FILA POR FILA DEL DATAFRAME PROCESADO
+    lista_campanas = []
     
-    if len(df_datos.columns) > col_idx_tipo:
-        df_limpio['Objetivo'] = df_datos.iloc[:, col_idx_tipo].astype(str).str.strip().replace('', 'Sin Objetivo')
-    else:
-        df_limpio['Objetivo'] = 'General'
+    for idx, row in df_datos.iterrows():
+        # Verificamos que la fila contenga al menos los campos esenciales antes de leer
+        if len(row) <= max(col_idx_camp, col_idx_medio): continue
         
-    df_limpio['Resultados'] = df_datos.iloc[:, col_idx_res].astype(str).str.strip() if len(df_datos.columns) > col_idx_res else 'N/D'
-    df_limpio['CPA'] = df_datos.iloc[:, col_idx_cpa].astype(str).str.strip() if len(df_datos.columns) > col_idx_cpa else 'N/D'
+        celda_camp = str(row[col_idx_camp]).strip()
+        celda_medio = str(row[col_idx_medio]).strip()
+        
+        # Filtros de control
+        if celda_camp == '' or any(k in celda_camp.lower() for k in ['campaign', 'campaña', 'nombre de la', 'total']):
+            continue
+            
+        # Extracción segura de columnas avanzadas con validación de longitud por fila
+        celda_status = str(row[col_idx_status]).strip() if len(row) > col_idx_status else 'N/D'
+        if celda_status == '': celda_status = 'N/D'
+        
+        celda_spend = str(row[col_idx_spend]).strip() if len(row) > col_idx_spend else '0'
+        celda_tipo = str(row[col_idx_tipo]).strip() if len(row) > col_idx_tipo else 'General'
+        if celda_tipo == '': celda_tipo = 'Sin Objetivo'
+        
+        celda_res = str(row[col_idx_res]).strip() if len(row) > col_idx_res else 'N/D'
+        celda_cpa = str(row[col_idx_cpa]).strip() if len(row) > col_idx_cpa else 'N/D'
 
-    # 5. LIMPIEZA DE FILAS EN BLANCO Y TOTALES DE CONTROL
-    df_limpio = df_limpio[df_limpio['Campaña'] != '']
-    df_limpio = df_limpio[~df_limpio['Campaña'].str.upper().str.contains('TOTAL')]
-    df_limpio = df_limpio[~df_limpio['Campaña'].str.lower().str.contains('campaign|campaña|nombre de la')]
+        lista_campanas.append({
+            'Medio_Raw': celda_medio,
+            'Campaña': celda_camp,
+            'Estado': celda_status,
+            'Gasto_Raw': celda_spend,
+            'Objetivo': celda_tipo,
+            'Resultados': celda_res,
+            'CPA': celda_cpa
+        })
 
-    # Agrupación y formateo numérico del gasto
-    df_limpio['Medio'] = df_limpio['Medio'].replace(['', 'nan', 'NaN'], pd.NA).ffill().fillna('Sin Medio')
+    df_limpio = pd.DataFrame(lista_campanas)
+
+    # Agrupación y relleno inteligente hacia abajo de la columna Medio
+    df_limpio['Medio_Raw'] = df_limpio['Medio_Raw'].replace(['', 'nan', 'NaN'], pd.NA)
+    df_limpio['Medio'] = df_limpio['Medio_Raw'].ffill().fillna('Sin Medio')
+
+    # Formateo numérico del gasto
     df_limpio['Gasto'] = df_limpio['Gasto_Raw'].str.replace(r'[^\d.-]', '', regex=True)
     df_limpio['Gasto'] = pd.to_numeric(df_limpio['Gasto'], errors='coerce').fillna(0)
 
@@ -167,9 +188,8 @@ try:
     else:
         st.warning("No se detectan datos de gasto mayores a $0 para graficar en este periodo.")
 
-    # --- TABLA CONTROL CON ESTADO ---
+    # --- TABLA CONTROL CON ESTADO REAL ---
     with st.expander("📝 Detalle General de Campañas"):
-        # Se agrega la columna 'Estado' a la visualización ordenada
         st.dataframe(df_limpio[['Medio', 'Campaña', 'Estado', 'Objetivo', 'Resultados', 'CPA']].sort_values(by='Medio'), use_container_width=True, hide_index=True)
 
 except Exception as e:
