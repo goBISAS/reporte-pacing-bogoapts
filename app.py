@@ -15,16 +15,18 @@ st.set_page_config(
     layout="wide"
 )
 
-st.markdown("""
-    <style>
-    .main { background-color: #0d0d0d; }
-    [data-testid="stMetricValue"] { font-size: 32px; color: #d6b58e !important; font-weight: 700; }
-    [data-testid="stMetricLabel"] { color: #f5f5f5 !important; }
-    h1, h2, h3 { color: #ffffff; font-family: 'Georgia', serif; }
-    .stSidebar { background-color: #1a1a1a; border-right: 1px solid #333; }
-    .stPlotlyChart { border: 1px solid #333; border-radius: 8px; background-color: #1a1a1a; }
-    </style>
-    """, unsafe_allow_html=True)
+# Estilos CSS empaquetados en variable segura
+estilo_css = """
+<style>
+.main { background-color: #0d0d0d; }
+[data-testid="stMetricValue"] { font-size: 32px; color: #d6b58e !important; font-weight: 700; }
+[data-testid="stMetricLabel"] { color: #f5f5f5 !important; }
+h1, h2, h3, p, span { color: #ffffff; font-family: 'Georgia', serif; }
+.stSidebar { background-color: #1a1a1a; border-right: 1px solid #333; }
+.stPlotlyChart { border: 1px solid #333; border-radius: 8px; background-color: #1a1a1a; }
+</style>
+"""
+st.markdown(estilo_css, unsafe_allow_html=True)
 
 # --- FUNCIONES GLOBALES ---
 def obtener_meses_disponibles():
@@ -71,6 +73,3 @@ def format_label(val):
     if val >= 1_000_000: return f"${val/1_000_000:.1f}M"
     elif val >= 1_000: return f"${val/1_000:.0f}k"
     elif val == 0: return ""
-    else: return f"${val:.0f}"
-
-# =
