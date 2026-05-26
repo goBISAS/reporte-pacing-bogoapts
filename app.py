@@ -73,18 +73,4 @@ def format_label(val):
     elif val == 0: return ""
     else: return f"${val:.0f}"
 
-# ==========================================================
-# 2. MENÚ LATERAL PRINCIPAL
-# ==========================================================
-with st.sidebar:
-    try:
-        st.image("Logo_bogoapts_dashboard.PNG", use_container_width=True)
-    except:
-        st.caption("🏢 *BogoApts*")
-        
-    st.markdown("## Menú de Navegación")
-    vista_activa = st.radio(
-        "Seleccione el módulo:",
-        ["📊 Control de Pauta (Pacing)", "📈 Histórico y ROAS"]
-    )
-    st.markdown
+# =
