@@ -62,14 +62,17 @@ with st.sidebar:
     st.markdown("---")
     mes_seleccionado = st.selectbox("📅 Seleccione el Mes de Reporte:", options=meses_disponibles)
 
-# Fragmentación del periodo seleccionado para las bitácoras internas
+# Fragmentación del periodo seleccionado para las bitácoras de negocio internas
 partes_mes = mes_seleccionado.split(" ")
 mes_nombre_inf = partes_mes[0].lower().strip()
 ano_numero_inf = partes_mes[1].strip()
 
+
 # ==========================================================
-# FUENTE 1: CONTROL DIARIO DE PAUTA (EL NÚCLEO INMUNE CERRADO)
+# SECCIÓN 1: PROCESAMIENTO EXCLUSIVO DE DATOS (BACKEND)
 # ==========================================================
+
+# --- BLOQUE PACING DIARIO ---
 url_base_pacing = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHlX9sx0kOvNg-150YRE42W0/"
 url_pacing = get_csv_url_by_sheet(url_base_pacing, mes_seleccionado)
 
@@ -129,22 +132,21 @@ try:
         })
 
     df_limpio_pacing = pd.DataFrame(lista_campanas)
-    df_limpio_pacing['Medio_Raw'] = df_limpio_pacing['Medio_Raw'].replace(['', 'nan', 'NaN'], pd.NA)
-    df_limpio_pacing['Medio'] = df_limpio_pacing['Medio_Raw'].ffill().fillna('Sin Medio')
-    df_limpio_pacing['Gasto'] = df_limpio_pacing['Gasto_Raw'].str.replace(r'[^\d.-]', '', regex=True)
-    df_limpio_pacing['Gasto'] = pd.to_numeric(df_limpio_pacing['Gasto'], errors='coerce').fillna(0)
+    if not df_limpio_pacing.empty:
+        df_limpio_pacing['Medio_Raw'] = df_limpio_pacing['Medio_Raw'].replace(['', 'nan', 'NaN'], pd.NA)
+        df_limpio_pacing['Medio'] = df_limpio_pacing['Medio_Raw'].ffill().fillna('Sin Medio')
+        df_limpio_pacing['Gasto'] = df_limpio_pacing['Gasto_Raw'].str.replace(r'[^\d.-]', '', regex=True)
+        df_limpio_pacing['Gasto'] = pd.to_numeric(df_limpio_pacing['Gasto'], errors='coerce').fillna(0)
 
-    resumen_medios = df_limpio_pacing.groupby('Medio')['Gasto'].sum()
-    mapa_medios = {med: f"{med} (${tot:,.0f})" for med, tot in resumen_medios.items()}
-    df_limpio_pacing['Medio_Labels'] = df_limpio_pacing['Medio'].map(mapa_medios).astype(str)
-    gasto_total_calculado = df_limpio_pacing['Gasto'].sum()
-    pacing_exitoso = True
+        resumen_medios = df_limpio_pacing.groupby('Medio')['Gasto'].sum()
+        mapa_medios = {med: f"{med} (${tot:,.0f})" for med, tot in resumen_medios.items()}
+        df_limpio_pacing['Medio_Labels'] = df_limpio_pacing['Medio'].map(mapa_medios).astype(str)
+        gasto_total_calculado = df_limpio_pacing['Gasto'].sum()
+        pacing_exitoso = True
 except Exception as e:
-    st.error(f"Error detectado en el Módulo de Pacing: {e}")
+    st.error(f"Error procesando datos de Pauta: {e}")
 
-# ==========================================================
-# FUENTE 2: BITÁCORA DEL ROAS (BLOQUES PERFECTAMENTE CERRADOS)
-# ==========================================================
+# --- BLOQUE ATRIBUCIÓN Y ROAS ---
 url_roas_csv = "https://docs.google.com/spreadsheets/d/190FjfTc6ZsAsRsj3swki1Ch6BME6j2CbfgyxcUt1pY/gviz/tq?tqx=out:csv&gid=0"
 
 inv_roas_mes = "$0"; ventas_roas_mes = "$0"; roas_real = "0.0"; roas_esperado = "0.0"
@@ -154,44 +156,7 @@ roas_exitoso = False
 try:
     df_raw_roas = pd.read_csv(url_roas_csv, header=None, dtype=str).fillna('')
     
-    # 1. Bloque Superior
+    # 1. Extracción e indexación de la Tabla Superior (Filas 4 a 31)
     filas_superior = []
     for r_idx in range(3, min(31, len(df_raw_roas))):
         filas_superior.append(df_raw_roas.iloc[r_idx].astype(str).tolist())
-    
-    df_sup = pd.DataFrame(filas_superior)
-    if not df_sup.empty:
-        df_sup[0] = df_sup[0].str.strip().replace(['', 'nan'], pd.NA).ffill() 
-        df_sup[1] = df_sup[1].str.lower().str.strip()
-        
-        fila_mes_sup = df_sup[(df_sup[0] == ano_numero_inf) & (df_sup[1] == mes_nombre_inf)]
-        if not fila_mes_sup.empty:
-            inv_roas_mes = fila_mes_sup.iloc[0, 2].strip()          
-            ventas_roas_mes = fila_mes_sup.iloc[0, 3].strip()       
-            roas_real = fila_mes_sup.iloc[0, 4].strip()             
-            roas_esperado = fila_mes_sup.iloc[0, 6].strip()         
-            cumplimiento_roas = fila_mes_sup.iloc[0, 7].strip()     
-
-    # 2. Bloque Inferior
-    filas_inferior = []
-    for r_idx in range(32, len(df_raw_roas)):
-        filas_inferior.append(df_raw_roas.iloc[r_idx].astype(str).tolist())
-        
-    df_inf = pd.DataFrame(filas_inferior)
-    if not df_inf.empty:
-        df_inf[0] = df_inf[0].str.strip().replace(['', 'nan'], pd.NA).ffill() 
-        df_inf[1] = df_inf[1].str.lower().str.strip()
-        
-        fila_mes_inf = df_inf[(df_inf[0] == ano_numero_inf) & (df_inf[1] == mes_nombre_inf)]
-        if not fila_mes_inf.empty:
-            leads_mes = fila_mes_inf.iloc[0, 8].strip()             
-            cotizaciones_mes = fila_mes_inf.iloc[0, 9].strip()       
-            cierres_mes = fila_mes_inf.iloc[0, 10].strip()           
-            
-    roas_exitoso = True
-except Exception as e:
-    pass
-
-
-# ==========================================================
-# RENDERIZADO
