@@ -86,7 +86,7 @@ try:
     df_raw_pacing = pd.read_csv(url_pacing, header=None, dtype=str).fillna('')
     idx_header = 2 
     
-    # Búsqueda ultra corta y segura de presupuesto (Línea protegida contra cortes)
+    # Búsqueda ultra corta y segura de presupuesto
     for i in range(min(5, len(df_raw_pacing))):
         fila = [str(x).lower().strip() for x in df_raw_pacing.iloc[i].tolist()]
         if 'approved' in fila or 'aprobado' in fila:
@@ -109,22 +109,4 @@ try:
     if len(df_datos_pacing) > 0 and len(df_raw_pacing.columns) > col_idx_fecha:
         for row_pos in range(len(df_raw_pacing) - 1, idx_header, -1):
             val_celda = str(df_raw_pacing.iloc[row_pos, col_idx_fecha]).strip()
-            val_lower = val_celda.lower()
-            if val_celda != '' and val_lower not in ['nan', 'none', '<na>', '-', 'null', 'total']:
-                if not any(k in val_lower for k in ['actualiz', 'pacing', 'fecha', 'campaign', 'nombre']):
-                    fecha_update = val_celda
-                    break
-
-    lista_campanas = []
-    for idx, row in df_datos_pacing.iterrows():
-        if len(row) <= max(col_idx_camp, col_idx_medio): continue
-        celda_camp = str(row[col_idx_camp]).strip()
-        celda_medio = str(row[col_idx_medio]).strip()
-        if celda_camp == '' or any(k in celda_camp.lower() for k in ['campaign', 'campaña', 'nombre de la', 'total']):
-            continue
-        celda_status = str(row[col_idx_status]).strip() if len(row) > col_idx_status else 'N/D'
-        if celda_status == '': celda_status = 'N/D'
-        celda_spend = str(row[col_idx_spend]).strip() if len(row) > col_idx_spend else '0'
-        celda_tipo = str(row[col_idx_tipo]).strip() if len(row) > col_idx_tipo else 'General'
-        if celda_tipo == '': celda_tipo = 'Sin Objetivo'
-        celda_res = str(row
+            val_lower =
