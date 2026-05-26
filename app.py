@@ -102,7 +102,7 @@ try:
         dtype=str
     ).fillna('')
     
-    # Búsqueda directa secuencial anti-cortes
+    # Búsqueda directa de presupuesto
     for i in range(min(5, len(df_r_pacing))):
         f_list = df_r_pacing.iloc[i].astype(str).tolist()
         for pos in range(len(f_list)):
@@ -207,14 +207,19 @@ try:
         dtype=str
     ).fillna('')
     
+    # Bloque Superior Flexibilizado
     f_sup = []
     l_sup = min(31, len(df_r_roas))
     for r in range(3, l_sup):
         f_sup.append(df_r_roas.iloc[r].astype(str).tolist())
     df_s = pd.DataFrame(f_sup)
     if not df_s.empty:
+        # Formateo Ultra-Seguro de texto contra mayúsculas y puntos decimales
         df_s[0] = df_s[0].str.strip().replace(['', 'nan'], pd.NA).ffill()
-        df_s[1] = df_s[1].str.lower().str.strip()
+        df_s[0] = df_s[0].astype(str).str.replace(r'[^\d]', '', regex=True)
+        df_s[1] = df_s[1].astype(str).str.lower().str.strip()
+        
+        # Filtro inteligente tolerante
         f_mes = df_s[(df_s[0] == ano_num) & (df_s[1] == mes_nom)]
         if not f_mes.empty:
             inv_com = str(f_mes.iloc[0, 2]).strip()
@@ -223,13 +228,16 @@ try:
             r_esp = str(f_mes.iloc[0, 6]).strip()
             cumpli = str(f_mes.iloc[0, 7]).strip()
 
+    # Bloque Inferior Flexibilizado
     f_inf = []
     for r in range(32, len(df_r_roas)):
         f_inf.append(df_r_roas.iloc[r].astype(str).tolist())
     df_i = pd.DataFrame(f_inf)
     if not df_i.empty:
         df_i[0] = df_i[0].str.strip().replace(['', 'nan'], pd.NA).ffill()
-        df_i[1] = df_i[1].str.lower().str.strip()
+        df_i[0] = df_i[0].astype(str).str.replace(r'[^\d]', '', regex=True)
+        df_i[1] = df_i[1].astype(str).str.lower().str.strip()
+        
         f_mes_i = df_i[(df_i[0] == ano_num) & (df_i[1] == mes_nom)]
         if not f_mes_i.empty:
             leads = str(f_mes_i.iloc[0, 8]).strip()
@@ -294,7 +302,8 @@ with t_pacing:
         st.error("Error al desplegar la interfaz gráfica de pauta.")
 
 with t_atribucion:
-    if roas_ok and (ventas_com != "$0" and ventas_com != ""):
+    # Verificación de datos de negocio activos
+    if roas_ok and ventas_com != "$0" and ventas_com != "" and ventas_com != "0":
         ka, kb, kc, kd = st.columns(4)
         with ka: st.metric("Ventas Atribuidas", ventas_com)
         with kb: st.metric("ROAS Real", f"{r_real}x", help=f"Meta: {r_esp}x")
@@ -335,6 +344,6 @@ with t_atribucion:
             st.metric("Prospectos Totales", f"{leads} Leads")
             st.metric("Cotizaciones Generadas", f"{cotiz} Cotizaciones")
     else:
-        st.info("💡 Datos de Atribución listos para el periodo comercial activo.")
+        st.info("💡 Módulo de Atribución listo. Los datos comerciales se desplegarán automáticamente cuando la Bitácora registre métricas de venta e inversión para el periodo seleccionado.")
 
 st.caption("BogoApts Analytics | Strategic Analytics by goBIG")
