@@ -86,6 +86,7 @@ ano_num = partes[1].strip()
 # BACKEND - PROCESAMIENTO LINEAL
 # ==========================================
 
+# 1. ENLACE PACING DIARIO (Busca la pestaña del mes seleccionado)
 url_pacing_base = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHlX9sx0kOvNg-150YRE42W0/"
 url_pacing = get_csv_url(url_pacing_base, mes_sel)
 
@@ -102,7 +103,6 @@ try:
         dtype=str
     ).fillna('')
     
-    # Búsqueda directa de presupuesto
     for i in range(min(5, len(df_r_pacing))):
         f_list = df_r_pacing.iloc[i].astype(str).tolist()
         for pos in range(len(f_list)):
@@ -114,7 +114,6 @@ try:
 
     df_d_pacing = df_r_pacing.iloc[3:].copy()
     
-    # Fecha de actualización
     if len(df_r_pacing.columns) > 18:
         for r in range(len(df_r_pacing)-1, 2, -1):
             val_celda = str(df_r_pacing.iloc[r, 18]).strip()
@@ -187,8 +186,9 @@ try:
 except Exception as e:
     st.error(f"Error Módulo Pacing: {e}")
 
-# --- BITÁCORA COMERCIAL ROAS ---
-url_roas = "https://docs.google.com/spreadsheets/d/190FjfTc6ZsAsRsj3swki1Ch6BME6j2CbfgyxcUt1pY/gviz/tq?tqx=out:csv&gid=0"
+# 2. ENLACE BITÁCORA COMERCIAL ROAS (Forzado estricto a leer la pestaña 'Roas')
+url_roas_base = "https://docs.google.com/spreadsheets/d/190FjfTc6ZsAsRsj3swki1Ch6BME6j2CbfgyxcUt1pY/"
+url_roas = get_csv_url(url_roas_base, "Roas")
 
 inv_com = "$0"
 ventas_com = "$0"
@@ -207,19 +207,17 @@ try:
         dtype=str
     ).fillna('')
     
-    # Bloque Superior Flexibilizado
+    # Bloque Matriz Superior
     f_sup = []
     l_sup = min(31, len(df_r_roas))
     for r in range(3, l_sup):
         f_sup.append(df_r_roas.iloc[r].astype(str).tolist())
     df_s = pd.DataFrame(f_sup)
     if not df_s.empty:
-        # Formateo Ultra-Seguro de texto contra mayúsculas y puntos decimales
         df_s[0] = df_s[0].str.strip().replace(['', 'nan'], pd.NA).ffill()
         df_s[0] = df_s[0].astype(str).str.replace(r'[^\d]', '', regex=True)
         df_s[1] = df_s[1].astype(str).str.lower().str.strip()
         
-        # Filtro inteligente tolerante
         f_mes = df_s[(df_s[0] == ano_num) & (df_s[1] == mes_nom)]
         if not f_mes.empty:
             inv_com = str(f_mes.iloc[0, 2]).strip()
@@ -228,7 +226,7 @@ try:
             r_esp = str(f_mes.iloc[0, 6]).strip()
             cumpli = str(f_mes.iloc[0, 7]).strip()
 
-    # Bloque Inferior Flexibilizado
+    # Bloque Matriz Inferior
     f_inf = []
     for r in range(32, len(df_r_roas)):
         f_inf.append(df_r_roas.iloc[r].astype(str).tolist())
@@ -302,8 +300,9 @@ with t_pacing:
         st.error("Error al desplegar la interfaz gráfica de pauta.")
 
 with t_atribucion:
-    # Verificación de datos de negocio activos
-    if roas_ok and ventas_com != "$0" and ventas_com != "" and ventas_com != "0":
+    # Validación flexible: que se muestre si hay inversión o ventas registradas
+    hay_datos = ventas_com != "$0" and ventas_com != "" and ventas_com != "0"
+    if roas_ok and hay_datos:
         ka, kb, kc, kd = st.columns(4)
         with ka: st.metric("Ventas Atribuidas", ventas_com)
         with kb: st.metric("ROAS Real", f"{r_real}x", help=f"Meta: {r_esp}x")
@@ -344,6 +343,6 @@ with t_atribucion:
             st.metric("Prospectos Totales", f"{leads} Leads")
             st.metric("Cotizaciones Generadas", f"{cotiz} Cotizaciones")
     else:
-        st.info("💡 Módulo de Atribución listo. Los datos comerciales se desplegarán automáticamente cuando la Bitácora registre métricas de venta e inversión para el periodo seleccionado.")
+        st.info("💡 Módulo de Atribución listo. Los datos comerciales se desplegarán automáticamente cuando la pestaña 'Roas' de la Bitácora registre métricas de venta para el periodo seleccionado.")
 
 st.caption("BogoApts Analytics | Strategic Analytics by goBIG")
