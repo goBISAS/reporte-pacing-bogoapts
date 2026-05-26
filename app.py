@@ -132,27 +132,4 @@ try:
     df_limpio_pacing['Medio_Raw'] = df_limpio_pacing['Medio_Raw'].replace(['', 'nan', 'NaN'], pd.NA)
     df_limpio_pacing['Medio'] = df_limpio_pacing['Medio_Raw'].ffill().fillna('Sin Medio')
     df_limpio_pacing['Gasto'] = df_limpio_pacing['Gasto_Raw'].str.replace(r'[^\d.-]', '', regex=True)
-    df_limpio_pacing['Gasto'] = pd.to_numeric(df_limpio_pacing['Gasto'], errors='coerce').fillna(0)
-
-    resumen_medios = df_limpio_pacing.groupby('Medio')['Gasto'].sum()
-    mapa_medios = {med: f"{med} (${tot:,.0f})" for med, tot in resumen_medios.items()}
-    df_limpio_pacing['Medio_Labels'] = df_limpio_pacing['Medio'].map(mapa_medios).astype(str)
-    gasto_total_calculado = df_limpio_pacing['Gasto'].sum()
-    pacing_exitoso = True
-except Exception as e:
-    st.error(f"Error en módulo Control de Pauta: {e}")
-
-# ==========================================================
-# FUENTE 2: BITÁCORA DEL ROAS (URL CORROBORADA GID=0)
-# ==========================================================
-url_roas_csv = "https://docs.google.com/spreadsheets/d/190FjfTc6ZsAsRsj3swki1Ch6BME6j2CbfgyxcUt1pY/gviz/tq?tqx=out:csv&gid=0"
-
-inv_roas_mes = "$0"; ventas_roas_mes = "$0"; roas_real = "0.0"; roas_esperado = "0.0"
-cumplimiento_roas = "0.0%"; leads_mes = "0"; cotizaciones_mes = "0"; cierres_mes = "0"
-roas_exitoso = False
-
-try:
-    df_raw_roas = pd.read_csv(url_roas_csv, header=None, dtype=str).fillna('')
-    
-    # 1. Extracción e indexación de la Tabla Superior (Filas 4 a 31)
-    filas_superior = []
+    df_limpio_pacing['Gasto'] = pd
