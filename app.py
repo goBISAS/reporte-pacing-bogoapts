@@ -37,7 +37,7 @@ def obtener_meses():
         "septiembre", "octubre", "noviembre", 
         "diciembre"
     ]
-    ano, mes = 2026, 5
+    ano, mes = 2024, 12  # Expandido desde dic 2024 para cubrir historial completo
     now = datetime.now()
     lista = []
     while (ano < now.year) or (
@@ -70,6 +70,17 @@ def parse_num(val):
         return float(txt) if txt != '' else 0.0
     except:
         return 0.0
+
+def normalizar_mes_abrev(txt_mes):
+    """Mapea abreviaciones como ene, feb, mar a nombres completos"""
+    t = str(txt_mes).lower().strip()
+    mapeo = {
+        'ene': 'enero', 'feb': 'febrero', 'mar': 'marzo',
+        'abr': 'abril', 'may': 'mayo', 'jun': 'junio',
+        'jul': 'julio', 'ago': 'agosto', 'sep': 'septiembre',
+        'oct': 'octubre', 'nov': 'noviembre', 'dic': 'diciembre'
+    }
+    return mapeo.get(t, t)
 
 # --- BARRA LATERAL ---
 meses_disponibles = obtener_meses()
@@ -186,28 +197,42 @@ try:
     ).fillna('')
     registros = []
     
-    # Procesamiento de registros mensuales históricos (Filas 4 a 31)
-    for r in range(3, min(31, len(df_r_roas))):
+    # Bloque de lectura del bloque superior (Años y Meses fijados por filas de la bitácora)
+    ano_actual = "2025"
+    for r in range(5, len(df_r_roas)):
+        if r >= len(df_r_roas): break
         linea = df_r_roas.iloc[r].astype(str).tolist()
-        m_id = str(linea[1]).strip()
+        if len(linea) < 5: continue
         
-        if m_id != '' and 'total' not in m_id.lower() and 'meta' not in m_id.lower():
+        # Detectar cambio de año en columna A
+        val_ano = str(linea[0]).strip()
+        if val_ano != '' and val_ano.isdigit():
+            ano_actual = val_ano
+            
+        m_id = str(linea[1]).strip().lower()
+        if m_id == 'total': 
+            break  # Llegamos al final de la primera tabla
+            
+        if m_id != '' and '-' not in m_id:
             inv_v = parse_num(linea[2])
             ven_v = parse_num(linea[3])
             roas_v = parse_num(linea[4])
             
-            # Buscar correspondencia de embudo inferior (Filas 33+)
+            # Buscar correspondencia inteligente en la tabla inferior (Filas 33+)
             l_ld, l_ct, l_ci = 0, 0, 0
-            for ri in range(32, len(df_r_roas)):
+            for ri in range(33, len(df_r_roas)):
                 linea_i = df_r_roas.iloc[ri].astype(str).tolist()
-                if str(linea_i[1]).lower().strip() == m_id.lower().strip():
+                if len(linea_i) < 11: continue
+                
+                mes_inf_norm = normalizar_mes_abrev(linea_i[1])
+                if mes_inf_norm == m_id:
                     l_ld = int(parse_num(linea_i[8]))
                     l_ct = int(parse_num(linea_i[9]))
                     l_ci = int(parse_num(linea_i[10]))
                     break
                     
             registros.append({
-                'Mes Comercial': m_id.title(), 
+                'Mes Comercial': f"{m_id.title()} {ano_actual}", 
                 'Inversion': inv_v, 
                 'Ventas': ven_v,
                 'ROAS': roas_v, 
@@ -225,14 +250,13 @@ try:
         tot_cierres = df_historico['Cierres'].sum()
         roas_ok = True
 except Exception as e:
-    pass
+    st.error(f"Error Módulo Comercial Histórico: {e}")
 
 # ==========================================
 # FRONTEND - INTERFAZ DE NAVEGACIÓN
 # ==========================================
 st.title("🏢 Panel Analytics Comercial — BogoApts")
 
-# Líneas súper cortas anti-recortes para renderizar pestañas
 t1, t2 = st.tabs([
     "📊 Rendimiento Pauta", 
     "📈 Atribución e Histórico"
@@ -278,7 +302,7 @@ with t1:
                 hide_index=True
             )
     else:
-        st.error("Error al desplegar la interfaz operativa de pauta.")
+        st.info("No se encontraron campañas registradas o activas para el mes seleccionado.")
 
 # --- PESTAÑA 2: CONSOLIDADO COMERCIAL ---
 with t2:
@@ -344,6 +368,6 @@ with t2:
             hide_index=True
         )
     else:
-        st.info("💡 Conectando con los datos históricos de la pestaña 'Roas'.")
+        st.warning("No se pudo cargar la matriz comercial. Verifica la conexión con el Google Sheet.")
 
 st.caption("BogoApts Analytics | Strategic Analytics by goBIG")
