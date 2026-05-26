@@ -62,6 +62,13 @@ def parse_num(val):
     try: return float(txt) if txt != '' else 0.0
     except: return 0.0
 
+def format_label(val):
+    """Acorta números para que quepan en las gráficas en celular"""
+    if val >= 1_000_000: return f"${val/1_000_000:.1f}M"
+    elif val >= 1_000: return f"${val/1_000:.0f}k"
+    elif val == 0: return ""
+    else: return f"${val:.0f}"
+
 # ==========================================================
 # 2. MENÚ LATERAL PRINCIPAL
 # ==========================================================
@@ -79,11 +86,10 @@ with st.sidebar:
     st.markdown("---")
 
 # ==========================================================
-# 3. MÓDULO 1: CONTROL DE PAUTA (PACING)
+# 3. MÓDULO 1: CONTROL DE PAUTA (INTACTO)
 # ==========================================================
 if vista_activa == "📊 Control de Pauta (Pacing)":
     
-    # Declaramos la variable de meses ANTES de usarla
     meses_disponibles = obtener_meses_disponibles()
     
     with st.sidebar:
@@ -165,13 +171,11 @@ if vista_activa == "📊 Control de Pauta (Pacing)":
     except Exception as e:
         st.error(f"Error procesando datos de Pauta: {e}")
 
-    # FRONTEND PAUTA
     if pacing_exitoso:
         c1, c2, c3 = st.columns(3)
         with c1: st.metric("Presupuesto Mensual", f"{presupuesto_mensual}")
         with c2: st.metric("Inversión Ejecutada", f"${gasto_total_calculado:,.0f}")
         with c3:
-            # Aquí es donde fallaba, ahora `meses_disponibles` sí existe
             if mes_seleccionado == meses_disponibles[0]:
                 st.metric("Día de Medición", f"Día {datetime.now().day}")
             else:
@@ -196,7 +200,7 @@ if vista_activa == "📊 Control de Pauta (Pacing)":
         st.error("No se pudieron cargar los datos de rendimiento de pauta.")
 
 # ==========================================================
-# 4. MÓDULO 2: HISTÓRICO Y ROAS (NUEVO & AISLADO)
+# 4. MÓDULO 2: HISTÓRICO Y ROAS (MEJORADO CON FILTROS)
 # ==========================================================
 elif vista_activa == "📈 Histórico y ROAS":
     st.title("📈 Desempeño Histórico y ROAS Comercial")
@@ -214,6 +218,7 @@ elif vista_activa == "📈 Histórico y ROAS":
             
             ano, mes = str(row[0]).strip(), str(row[1]).strip()
             if mes == '' or mes == '-' or 'total' in mes.lower(): continue
+            if ano == '' or ano == '-': continue
             
             inv_total = parse_num(row[5])
             leads = int(parse_num(row[6]))
@@ -223,9 +228,14 @@ elif vista_activa == "📈 Histórico y ROAS":
             roas_calc = (ventas / inv_total) if inv_total > 0 else 0.0
             
             registros.append({
-                'Periodo': f"{mes.title()} {ano}", 'Inversión Total': inv_total,
-                'Ventas Atribuidas': ventas, 'ROAS': roas_calc,
-                'Leads': leads, 'Cotizaciones': cotiz, 'Cierres': cierres
+                'Año': ano,
+                'Periodo': f"{mes.title()} {ano}", 
+                'Inversión Total': inv_total,
+                'Ventas Atribuidas': ventas, 
+                'ROAS': roas_calc,
+                'Leads': leads, 
+                'Cotizaciones': cotiz, 
+                'Cierres': cierres
             })
             
         df_hist = pd.DataFrame(registros)
@@ -234,55 +244,108 @@ elif vista_activa == "📈 Histórico y ROAS":
         st.error(f"Error de conexión con la hoja ROAS: {e}")
 
     if roas_ok and not df_hist.empty:
-        total_ventas = df_hist['Ventas Atribuidas'].sum()
-        total_inv = df_hist['Inversión Total'].sum()
-        roas_global = (total_ventas / total_inv) if total_inv > 0 else 0.0
         
-        df_ventas_activas = df_hist[df_hist['Ventas Atribuidas'] > 0]
-        if not df_ventas_activas.empty:
-            idx_max_roas = df_ventas_activas['ROAS'].idxmax()
-            mes_top = df_ventas_activas.loc[idx_max_roas, 'Periodo']
-            roas_top = df_ventas_activas.loc[idx_max_roas, 'ROAS']
-            texto_mes_top = f"{mes_top} ({roas_top:.2f}x)"
+        # --- SELECTOR DE AÑOS ---
+        anios_unicos = sorted(df_hist['Año'].unique().tolist(), reverse=True)
+        opciones_filtro = ["Todos"] + anios_unicos
+        
+        ano_seleccionado = st.selectbox("🗓️ Filtrar métricas por Año:", options=opciones_filtro)
+        
+        # Filtrar el dataframe basado en el selector
+        if ano_seleccionado != "Todos":
+            df_filtrado = df_hist[df_hist['Año'] == ano_seleccionado].copy()
         else:
-            texto_mes_top = "N/D"
+            df_filtrado = df_hist.copy()
 
-        st.markdown("### 🏆 Hitos de Negocio Acumulados")
-        k1, k2, k3, k4 = st.columns(4)
-        with k1: st.metric("Ventas Históricas", f"${total_ventas:,.0f}")
-        with k2: st.metric("ROAS Global", f"{roas_global:.2f}x")
-        with k3: st.metric("Inversión Total", f"${total_inv:,.0f}")
-        with k4: st.metric("Mes Más Rentable", texto_mes_top)
-        st.divider()
-        
-        col1, col2 = st.columns([1.5, 1])
-        with col1:
-            st.markdown("### 📊 Evolución Mensual: Ventas vs Inversión")
-            fig_evolucion = go.Figure()
-            fig_evolucion.add_trace(go.Bar(x=df_hist['Periodo'], y=df_hist['Ventas Atribuidas'], name='Ventas Atribuidas', marker_color='#d6b58e'))
-            fig_evolucion.add_trace(go.Bar(x=df_hist['Periodo'], y=df_hist['Inversión Total'], name='Inversión (Spend)', marker_color='#5b3f8e'))
-            fig_evolucion.update_layout(barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white", margin=dict(t=20, b=20, l=10, r=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-            st.plotly_chart(fig_evolucion, use_container_width=True)
+        if df_filtrado.empty:
+            st.warning("No hay datos cargados para el año seleccionado.")
+        else:
+            # 1. CÁLCULO DE METRICAS GLOBALES SEGÚN EL FILTRO
+            total_ventas = df_filtrado['Ventas Atribuidas'].sum()
+            total_inv = df_filtrado['Inversión Total'].sum()
+            roas_global = (total_ventas / total_inv) if total_inv > 0 else 0.0
             
-        with col2:
-            st.markdown("### 🎯 Embudo Histórico")
-            total_l, total_c, total_ci = df_hist['Leads'].sum(), df_hist['Cotizaciones'].sum(), df_hist['Cierres'].sum()
-            if total_l > 0:
-                fig_funnel = go.Figure(go.Funnel(y=["Leads Atribuidos", "Cotizaciones", "Cierres Efectivos"], x=[total_l, total_c, total_ci], textinfo="value+percent initial", marker={"color": ["#d6b58e", "#aa8b66", "#5b3f8e"]}))
-                fig_funnel.update_layout(margin=dict(t=20, b=20, l=20, r=20), paper_bgcolor='rgba(0,0,0,0)', font_color="white")
-                st.plotly_chart(fig_funnel, use_container_width=True)
+            df_ventas_activas = df_filtrado[df_filtrado['Ventas Atribuidas'] > 0]
+            if not df_ventas_activas.empty:
+                idx_max_roas = df_ventas_activas['ROAS'].idxmax()
+                mes_top = df_ventas_activas.loc[idx_max_roas, 'Periodo']
+                roas_top = df_ventas_activas.loc[idx_max_roas, 'ROAS']
+                texto_mes_top = f"{mes_top} ({roas_top:.2f}x)"
             else:
-                st.info("No hay suficientes registros para el embudo.")
+                texto_mes_top = "N/D"
+
+            st.markdown("### 🏆 Hitos de Negocio")
+            k1, k2, k3, k4 = st.columns(4)
+            with k1: st.metric("Ventas Atribuidas", f"${total_ventas:,.0f}")
+            with k2: st.metric("ROAS Promedio", f"{roas_global:.2f}x")
+            with k3: st.metric("Inversión Total", f"${total_inv:,.0f}")
+            with k4: st.metric("Mes Más Rentable", texto_mes_top)
+            st.divider()
+            
+            # 2. GRÁFICOS MO-M (MES A MES)
+            col1, col2 = st.columns([1.5, 1])
+            
+            with col1:
+                st.markdown("### 📊 Evolución: Ventas vs Inversión")
                 
-        st.markdown("### 📋 Matriz de Control Mensual")
-        df_mostrar = df_hist.copy()
-        df_mostrar['Inversión Total'] = df_mostrar['Inversión Total'].map(lambda x: f"${x:,.0f}")
-        df_mostrar['Ventas Atribuidas'] = df_mostrar['Ventas Atribuidas'].map(lambda x: f"${x:,.0f}")
-        df_mostrar['ROAS'] = df_mostrar['ROAS'].map(lambda x: f"{x:.2f}x")
-        st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+                text_v = df_filtrado['Ventas Atribuidas'].apply(format_label)
+                text_i = df_filtrado['Inversión Total'].apply(format_label)
+                
+                fig_evolucion = go.Figure()
+                fig_evolucion.add_trace(go.Bar(
+                    x=df_filtrado['Periodo'], 
+                    y=df_filtrado['Ventas Atribuidas'], 
+                    name='Ventas', 
+                    marker_color='#d6b58e',
+                    text=text_v,
+                    textposition='outside'
+                ))
+                fig_evolucion.add_trace(go.Bar(
+                    x=df_filtrado['Periodo'], 
+                    y=df_filtrado['Inversión Total'], 
+                    name='Spend', 
+                    marker_color='#5b3f8e',
+                    text=text_i,
+                    textposition='outside'
+                ))
+                fig_evolucion.update_layout(
+                    barmode='group',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    font_color="white",
+                    margin=dict(t=20, b=20, l=10, r=10),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_evolucion, use_container_width=True)
+                
+            with col2:
+                st.markdown("### 🎯 Embudo Comercial")
+                total_l = df_filtrado['Leads'].sum()
+                total_c = df_filtrado['Cotizaciones'].sum()
+                total_ci = df_filtrado['Cierres'].sum()
+                
+                if total_l > 0:
+                    fig_funnel = go.Figure(go.Funnel(
+                        y=["Leads Atribuidos", "Cotizaciones", "Cierres Efectivos"],
+                        x=[total_l, total_c, total_ci],
+                        textinfo="value+percent initial",
+                        marker={"color": ["#d6b58e", "#aa8b66", "#5b3f8e"]}
+                    ))
+                    fig_funnel.update_layout(margin=dict(t=20, b=20, l=20, r=20), paper_bgcolor='rgba(0,0,0,0)', font_color="white")
+                    st.plotly_chart(fig_funnel, use_container_width=True)
+                else:
+                    st.info("No hay suficientes registros para dibujar el embudo en este periodo.")
+                    
+            # 3. TABLA DE DATOS MAESTRA AGRUPADA
+            st.markdown("### 📋 Matriz de Control Mensual")
+            df_mostrar = df_filtrado.drop(columns=['Año']).copy()
+            df_mostrar['Inversión Total'] = df_mostrar['Inversión Total'].map(lambda x: f"${x:,.0f}")
+            df_mostrar['Ventas Atribuidas'] = df_mostrar['Ventas Atribuidas'].map(lambda x: f"${x:,.0f}")
+            df_mostrar['ROAS'] = df_mostrar['ROAS'].map(lambda x: f"{x:.2f}x")
+            
+            st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
 
     else:
-        st.info("No se detectaron datos históricos válidos en la hoja. Verifica que haya celdas con números cargados.")
+        st.info("No se detectaron datos históricos válidos. Verifica la conexión con el Google Sheet.")
 
-# PIE DE PÁGINA COMÚN
 st.caption("BogoApts Analytics | Strategic Analytics by goBIG")
