@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
 import urllib.parse
 import re
@@ -61,22 +62,30 @@ with st.sidebar:
     st.markdown("---")
     mes_seleccionado = st.selectbox("📅 Seleccione el Mes de Reporte:", options=meses_disponibles)
 
-# --- CONEXIÓN DINÁMICA CON LA URL TEXTUAL CORREGIDA ---
-url_base = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHlX9sx0kOvNg-150YRE42W0/"
-url_pacing = get_csv_url_by_sheet(url_base, mes_seleccionado)
+# Fragmentación del periodo seleccionado para las bitácoras internas
+partes_mes = mes_seleccionado.split(" ")
+mes_nombre_inf = partes_mes[0].lower().strip()
+ano_numero_inf = partes_mes[1].strip()
+
+# ==========================================================
+# FUENTE 1: CONTROL DIARIO DE PAUTA (EL NÚCLEO INMUNE)
+# ==========================================================
+url_base_pacing = "https://docs.google.com/spreadsheets/d/1Qkw-Fi3tLvY68maHxJOmHlX9sx0kOvNg-150YRE42W0/"
+url_pacing = get_csv_url_by_sheet(url_base_pacing, mes_seleccionado)
+
+presupuesto_mensual = "$0"
+gasto_total_calculado = 0
+fecha_update = "N/D"
+df_limpio_pacing = pd.DataFrame()
+pacing_exitoso = False
 
 try:
-    # Carga cruda del documento sin asumir nombres de columnas
-    df_raw = pd.read_csv(url_pacing, header=None, dtype=str).fillna('')
-    
-    # Definición de fila base de inicio (Los datos duros de campañas empiezan después de la fila 3)
+    df_raw_pacing = pd.read_csv(url_pacing, header=None, dtype=str).fillna('')
     idx_header = 2 
     
-    # 1. LECTURA DEL PRESUPUESTO APROBADO (Buscado dinámicamente en las celdas superiores)
-    presupuesto_mensual = "$0"
     for i in range(idx_header + 1):
-        if i >= len(df_raw): break
-        fila = df_raw.iloc[i].astype(str).tolist()
+        if i >= len(df_raw_pacing): break
+        fila = df_raw_pacing.iloc[i].astype(str).tolist()
         for j, celda in enumerate(fila):
             celda_limpia = celda.lower().strip()
             if 'approved' in celda_limpia or 'aprobado' in celda_limpia:
@@ -86,113 +95,64 @@ try:
         if presupuesto_mensual != "$0":
             break
 
-    # 2. CAPTURA DE MATRIZ DE DATOS REALES DE BOGOAPTS
-    df_datos = df_raw.iloc[idx_header + 1:].copy()
-    
-    # Asignación de índices fijos según la estructura visual real de BogoApts
-    col_idx_medio = 0  # Columna A: Medio
-    col_idx_camp = 1   # Columna B: Nombre de la campaña
-    col_idx_status = 4 # Columna E: Estado (Activa / Pausada) -> AJUSTADO CON ÉXITO A ÍNDICE 4
-    col_idx_spend = 7  # Columna H: Inversión (COP)
-    col_idx_res = 14   # Columna O: Platform Conversions
-    col_idx_tipo = 15  # Columna P: Official Conversions
-    col_idx_cpa = 17   # Columna R: CPA
-    col_idx_fecha = 18 # Columna S: Actualizacion Pacing
+    df_datos_pacing = df_raw_pacing.iloc[idx_header + 1:].copy()
+    col_idx_medio = 0; col_idx_camp = 1; col_idx_status = 4
+    col_idx_spend = 7; col_idx_res = 14; col_idx_tipo = 15; col_idx_cpa = 17; col_idx_fecha = 18
 
-    # 3. EXTRACCIÓN INVERSA DE FECHA DE ACTUALIZACIÓN (Columna S)
-    fecha_update = "N/D"
-    if len(df_datos) > 0 and len(df_raw.columns) > col_idx_fecha:
-        for row_pos in range(len(df_raw) - 1, idx_header, -1):
-            val_celda = str(df_raw.iloc[row_pos, col_idx_fecha]).strip()
+    if len(df_datos_pacing) > 0 and len(df_raw_pacing.columns) > col_idx_fecha:
+        for row_pos in range(len(df_raw_pacing) - 1, idx_header, -1):
+            val_celda = str(df_raw_pacing.iloc[row_pos, col_idx_fecha]).strip()
             val_lower = val_celda.lower()
-            
             if val_celda != '' and val_lower not in ['nan', 'none', '<na>', '-', 'null', 'total']:
                 if not any(k in val_lower for k in ['actualiz', 'pacing', 'fecha', 'campaign', 'nombre']):
                     fecha_update = val_celda
                     break
 
-    # 4. CONSTRUCCIÓN PROTEGIDA FILA POR FILA DEL DATAFRAME PROCESADO
     lista_campanas = []
-    
-    for idx, row in df_datos.iterrows():
-        # Verificamos que la fila contenga al menos los campos esenciales antes de leer
+    for idx, row in df_datos_pacing.iterrows():
         if len(row) <= max(col_idx_camp, col_idx_medio): continue
-        
         celda_camp = str(row[col_idx_camp]).strip()
         celda_medio = str(row[col_idx_medio]).strip()
-        
-        # Filtros de control
         if celda_camp == '' or any(k in celda_camp.lower() for k in ['campaign', 'campaña', 'nombre de la', 'total']):
             continue
-            
-        # Extracción segura de columnas avanzadas con validación de longitud por fila
         celda_status = str(row[col_idx_status]).strip() if len(row) > col_idx_status else 'N/D'
         if celda_status == '': celda_status = 'N/D'
-        
         celda_spend = str(row[col_idx_spend]).strip() if len(row) > col_idx_spend else '0'
         celda_tipo = str(row[col_idx_tipo]).strip() if len(row) > col_idx_tipo else 'General'
         if celda_tipo == '': celda_tipo = 'Sin Objetivo'
-        
         celda_res = str(row[col_idx_res]).strip() if len(row) > col_idx_res else 'N/D'
         celda_cpa = str(row[col_idx_cpa]).strip() if len(row) > col_idx_cpa else 'N/D'
 
         lista_campanas.append({
-            'Medio_Raw': celda_medio,
-            'Campaña': celda_camp,
-            'Estado': celda_status,
-            'Gasto_Raw': celda_spend,
-            'Objetivo': celda_tipo,
-            'Resultados': celda_res,
-            'CPA': celda_cpa
+            'Medio_Raw': celda_medio, 'Campaña': celda_camp, 'Estado': celda_status,
+            'Gasto_Raw': celda_spend, 'Objetivo': celda_tipo, 'Resultados': celda_res, 'CPA': celda_cpa
         })
 
-    df_limpio = pd.DataFrame(lista_campanas)
+    df_limpio_pacing = pd.DataFrame(lista_campanas)
+    df_limpio_pacing['Medio_Raw'] = df_limpio_pacing['Medio_Raw'].replace(['', 'nan', 'NaN'], pd.NA)
+    df_limpio_pacing['Medio'] = df_limpio_pacing['Medio_Raw'].ffill().fillna('Sin Medio')
+    df_limpio_pacing['Gasto'] = df_limpio_pacing['Gasto_Raw'].str.replace(r'[^\d.-]', '', regex=True)
+    df_limpio_pacing['Gasto'] = pd.to_numeric(df_limpio_pacing['Gasto'], errors='coerce').fillna(0)
 
-    # Agrupación y relleno inteligente hacia abajo de la columna Medio
-    df_limpio['Medio_Raw'] = df_limpio['Medio_Raw'].replace(['', 'nan', 'NaN'], pd.NA)
-    df_limpio['Medio'] = df_limpio['Medio_Raw'].ffill().fillna('Sin Medio')
-
-    # Formateo numérico del gasto
-    df_limpio['Gasto'] = df_limpio['Gasto_Raw'].str.replace(r'[^\d.-]', '', regex=True)
-    df_limpio['Gasto'] = pd.to_numeric(df_limpio['Gasto'], errors='coerce').fillna(0)
-
-    # Cálculo para las etiquetas de los gráficos
-    resumen_medios = df_limpio.groupby('Medio')['Gasto'].sum()
+    resumen_medios = df_limpio_pacing.groupby('Medio')['Gasto'].sum()
     mapa_medios = {med: f"{med} (${tot:,.0f})" for med, tot in resumen_medios.items()}
-    df_limpio['Medio_Labels'] = df_limpio['Medio'].map(mapa_medios).astype(str)
-    gasto_total_calculado = df_limpio['Gasto'].sum()
-
-    # --- INTERFAZ VISUAL ---
-    st.title(f"🏢 Dashboard Gerencial BogoApts: {mes_seleccionado.title()}")
-    
-    c1, c2, c3 = st.columns(3)
-    with c1: st.metric("Presupuesto Mensual", f"{presupuesto_mensual}")
-    with c2: st.metric("Inversión Ejecutada", f"${gasto_total_calculado:,.0f}")
-    with c3:
-        if mes_seleccionado == meses_disponibles[0]:
-            st.metric("Día de Medición", f"Día {datetime.now().day}")
-        else:
-            st.metric("Estado del Mes", "Cerrado")
-
-    st.success(f"✅ Sincronización exitosa con la pestaña [{mes_seleccionado}] | Último registro: {fecha_update}")
-    st.divider()
-
-    # --- VISUALIZACIÓN TREEMAP ---
-    st.header("📊 Distribución por Canal y Objetivo")
-    df_plot = df_limpio[df_limpio['Gasto'] > 0]
-    if not df_plot.empty:
-        fig = px.treemap(df_plot, path=['Medio_Labels', 'Objetivo'], values='Gasto', color='Gasto', color_continuous_scale=['#d6b58e', '#5b3f8e'])
-        fig.update_traces(texttemplate="<b>%{label}</b><br>$%{value:,.0f}", hovertemplate="<b>%{label}</b><br>Inversión: $%{value:,.0f}<extra></extra>", textposition="middle center")
-        fig.update_layout(margin=dict(t=10, l=10, r=10, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("No se detectan datos de gasto mayores a $0 para graficar en este periodo.")
-
-    # --- TABLA CONTROL CON ESTADO REAL ---
-    with st.expander("📝 Detalle General de Campañas"):
-        st.dataframe(df_limpio[['Medio', 'Campaña', 'Estado', 'Objetivo', 'Resultados', 'CPA']].sort_values(by='Medio'), use_container_width=True, hide_index=True)
-
+    df_limpio_pacing['Medio_Labels'] = df_limpio_pacing['Medio'].map(mapa_medios).astype(str)
+    gasto_total_calculado = df_limpio_pacing['Gasto'].sum()
+    pacing_exitoso = True
 except Exception as e:
-    st.error(f"Error detectado en el procesamiento de datos: {e}")
+    st.error(f"Error en módulo Control de Pauta: {e}")
 
-st.caption(f"BogoApts Real Estate Analytics | Strategic Analytics by goBIG")
+# ==========================================================
+# FUENTE 2: BITÁCORA DEL ROAS (URL CORROBORADA GID=0)
+# ==========================================================
+url_roas_csv = "https://docs.google.com/spreadsheets/d/190FjfTc6ZsAsRsj3swki1Ch6BME6j2CbfgyxcUt1pY/gviz/tq?tqx=out:csv&gid=0"
+
+inv_roas_mes = "$0"; ventas_roas_mes = "$0"; roas_real = "0.0"; roas_esperado = "0.0"
+cumplimiento_roas = "0.0%"; leads_mes = "0"; cotizaciones_mes = "0"; cierres_mes = "0"
+roas_exitoso = False
+
+try:
+    df_raw_roas = pd.read_csv(url_roas_csv, header=None, dtype=str).fillna('')
+    
+    # 1. Extracción e indexación de la Tabla Superior (Filas 4 a 31)
+    filas_superior = []
