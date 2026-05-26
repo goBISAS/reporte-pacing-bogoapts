@@ -51,7 +51,6 @@ def get_csv_url_by_sheet(url, sheet_name):
 # --- SIDEBAR CONTROL ---
 meses_disponibles = obtener_meses_disponibles()
 with st.sidebar:
-    # Vinculación directa con tu archivo de logo real cargado en el repositorio
     try:
         st.image("Logo_bogoapts_dashboard.PNG", use_container_width=True)
     except:
@@ -92,6 +91,7 @@ try:
     # Asignación de índices fijos según la estructura visual de BogoApts
     col_idx_medio = 0  # Columna A: Medio
     col_idx_camp = 1   # Columna B: Nombre de la campaña
+    col_idx_status = 2 # Columna C: Estado (Activa / Inactiva) -> NUEVA MODIFICACIÓN
     col_idx_spend = 7  # Columna H: Inversión (COP)
     col_idx_res = 14   # Columna O: Platform Conversions
     col_idx_tipo = 15  # Columna P: Official Conversions
@@ -114,6 +114,7 @@ try:
     df_limpio = pd.DataFrame()
     df_limpio['Campaña'] = df_datos.iloc[:, col_idx_camp].astype(str).str.strip()
     df_limpio['Medio'] = df_datos.iloc[:, col_idx_medio].astype(str).str.strip()
+    df_limpio['Estado'] = df_datos.iloc[:, col_idx_status].astype(str).str.strip().replace('', 'N/D') # -> NUEVA ASIGNACIÓN
     df_limpio['Gasto_Raw'] = df_datos.iloc[:, col_idx_spend].astype(str).str.strip()
     
     if len(df_datos.columns) > col_idx_tipo:
@@ -166,9 +167,10 @@ try:
     else:
         st.warning("No se detectan datos de gasto mayores a $0 para graficar en este periodo.")
 
-    # --- TABLA CONTROL ---
+    # --- TABLA CONTROL CON ESTADO ---
     with st.expander("📝 Detalle General de Campañas"):
-        st.dataframe(df_limpio[['Medio', 'Campaña', 'Objetivo', 'Resultados', 'CPA']].sort_values(by='Medio'), use_container_width=True, hide_index=True)
+        # Se agrega la columna 'Estado' a la visualización ordenada
+        st.dataframe(df_limpio[['Medio', 'Campaña', 'Estado', 'Objetivo', 'Resultados', 'CPA']].sort_values(by='Medio'), use_container_width=True, hide_index=True)
 
 except Exception as e:
     st.error(f"Error detectado en el procesamiento de datos: {e}")
